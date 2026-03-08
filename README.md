@@ -706,7 +706,7 @@ Every photo captured solves real problems:
 
 ```bash
 cd ~
-git clone <repository-url> lensmint
+git clone https://github.com/mbcse/lensmint-camera.git lensmint
 cd lensmint
 ```
 
@@ -779,7 +779,7 @@ Create `.env` files in `hardware-web3-service` and `lensmint-public-server` dire
 ### Step 7: Initialize Hardware Identity
 
 ```bash
-cd hardware-camera-app
+cd ../hardware-camera-app
 python3 hardware_identity.py
 ```
 
@@ -788,7 +788,7 @@ python3 hardware_identity.py
 ```bash
 sudo npm install -g pm2
 
-cd hardware-web3-service
+cd ../hardware-web3-service
 pm2 start server.js --name lensmint-hardware-web3-service
 
 cd ../lensmint-public-server
@@ -801,7 +801,7 @@ pm2 startup
 ### Step 9: Start Camera App
 
 ```bash
-cd hardware-camera-app
+cd ../hardware-camera-app
 source venv/bin/activate
 python3 raspberry_pi_camera_app.py
 ```
@@ -811,7 +811,7 @@ python3 raspberry_pi_camera_app.py
 For owner wallet management with Privy integration:
 
 ```bash
-cd owner-portal
+cd ../owner-portal
 npm install
 npm run dev
 ```
