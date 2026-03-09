@@ -16,16 +16,52 @@ pragma solidity ^0.8.31;
 import {IRiscZeroVerifier} from "risc0-risc0-ethereum-3.0.0/IRiscZeroVerifier.sol";
 
 contract LensMintVerifier {
-    // RISC Zero verifier for ZK proof validation
+
+    /////////////////////////
+    ///   ERRORS          ///
+    /////////////////////////
+
+    ///@dev Error to emit when the notary key fingerprint is invalid
+    error InvalidNotaryKeyFingerprint();
+
+    ///@dev Error to emit when the queries hash is invalid
+    error InvalidQueriesHash();
+
+    ///@dev Error to emit when the URL is invalid
+    error InvalidUrl();
+
+    ///@dev Error to emit when the ZK proof verification failed
+    error ZKProofVerificationFailed();
+
+    ///@dev Error to emit when the metadata is invalid
+    error InvalidMetadata();
+    
+    //////////////////////////
+    ///   STATE VARIABLES  ///
+    //////////////////////////
+
+    ///@dev RISC Zero verifier for ZK proof validation
     IRiscZeroVerifier public immutable VERIFIER;
+
+    ///@dev Image ID for the ZK proof
     bytes32 public immutable IMAGE_ID;
+
+    ///@dev Expected notary key fingerprint
     bytes32 public immutable EXPECTED_NOTARY_KEY_FINGERPRINT;
+
+    ///@dev Expected queries hash
     bytes32 public immutable EXPECTED_QUERIES_HASH;
+
+    ///@dev Expected URL pattern
     string public expectedUrlPattern;
 
+    ///@dev Mapping of claim ID to verified metadata
     mapping(string => VerifiedMetadata) public verifiedMetadata;
+
+    ///@dev Mapping of token ID to claim ID
     mapping(uint256 => string) public tokenIdToClaimId;
 
+    ///@dev Struct to store verified metadata
     struct VerifiedMetadata {
         string signature;
         string deviceAddress;
@@ -38,6 +74,7 @@ contract LensMintVerifier {
         bool verified;
     }
 
+    ///@dev Event to emit when metadata is verified
     event MetadataVerified(
         string claimId,
         uint256 tokenId,
@@ -48,11 +85,16 @@ contract LensMintVerifier {
         uint256 blockNumber
     );
 
-    error InvalidNotaryKeyFingerprint();
-    error InvalidQueriesHash();
-    error InvalidUrl();
-    error ZKProofVerificationFailed();
-    error InvalidMetadata();
+    /////////////////////////
+    ///   FUNCTIONS       ///
+    /////////////////////////
+
+    ///@notice Constructor to initialize the contract
+    ///@param _verifier The address of the RISC Zero verifier
+    ///@param _imageId The image ID for the ZK proof
+    ///@param _expectedNotaryKeyFingerprint The expected notary key fingerprint
+    ///@param _expectedQueriesHash The expected queries hash
+    ///@param _expectedUrlPattern The expected URL pattern
     constructor(
         address _verifier,
         bytes32 _imageId,
@@ -66,12 +108,12 @@ contract LensMintVerifier {
         EXPECTED_QUERIES_HASH = _expectedQueriesHash;
         expectedUrlPattern = _expectedUrlPattern;
     }
-
-    function submitMetadata(
-        string memory claimId,
-        bytes calldata journalData,
-        bytes calldata seal
-    ) external {
+ 
+    ///@notice Function to submit metadata for verification
+    ///@param claimId The claim ID for the metadata
+    ///@param journalData The journal data for the ZK proof
+    ///@param seal The seal for the ZK proof
+    function submitMetadata(string memory claimId, bytes calldata journalData, bytes calldata seal) external {
         (
             bytes32 notaryKeyFingerprint,
             string memory method,
@@ -95,11 +137,11 @@ contract LensMintVerifier {
 
         bytes memory urlBytes = bytes(url);
         bytes memory patternBytes = bytes(expectedUrlPattern);
-        
+
         if (urlBytes.length < patternBytes.length) {
             revert InvalidUrl();
         }
-        
+
         for (uint256 i = 0; i < patternBytes.length; i++) {
             if (urlBytes[i] != patternBytes[i]) {
                 revert InvalidUrl();
@@ -110,8 +152,8 @@ contract LensMintVerifier {
             revert InvalidMetadata();
         }
 
-        try VERIFIER.verify(seal, IMAGE_ID, sha256(journalData)) {
-        } catch {
+        try VERIFIER.verify(seal, IMAGE_ID, sha256(journalData)) {}
+        catch {
             revert ZKProofVerificationFailed();
         }
 
@@ -119,21 +161,19 @@ contract LensMintVerifier {
         metadata.timestamp = timestamp;
         metadata.verified = true;
 
-        emit MetadataVerified(
-            claimId,
-            0,
-            "",
-            "",
-            "",
-            timestamp,
-            block.number
-        );
+        emit MetadataVerified(claimId, 0, "", "", "", timestamp, block.number);
     }
 
+    ///@notice Function to get the verified metadata for a claim ID
+    ///@param claimId The claim ID for the metadata
+    ///@return VerifiedMetadata memory The verified metadata
     function getVerifiedMetadata(string memory claimId) external view returns (VerifiedMetadata memory) {
         return verifiedMetadata[claimId];
     }
-
+    
+    ///@notice Function to get the claim ID for a token ID
+    ///@param tokenId The token ID for the claim ID
+    ///@return string The claim ID
     function getClaimIdByTokenId(uint256 tokenId) external view returns (string memory) {
         return tokenIdToClaimId[tokenId];
     }
