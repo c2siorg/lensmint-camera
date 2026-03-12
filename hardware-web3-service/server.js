@@ -195,7 +195,10 @@ function startClaimPolling() {
               status: 'processing'
             });
           } catch (e) {
-            console.warn(`   ⚠️ Could not mark request as processing: ${e.message}`);
+            console.error(`   ❌ Failed to mark request ${request.id} as processing: ${e.message}`);
+            console.error(`   🛑 Aborting minting for this request to prevent double-minting.`);
+            processingEditionRequests.delete(request.id);
+            continue;
           }
           
           const mintResult = await web3Service.mintEdition(
