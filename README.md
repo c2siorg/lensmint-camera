@@ -706,7 +706,7 @@ Every photo captured solves real problems:
 
 ```bash
 cd ~
-git clone https://github.com/mbcse/lensmint-camera.git lensmint
+git clone https://github.com/c2siorg/lensmint-camera.git lensmint
 cd lensmint
 ```
 
