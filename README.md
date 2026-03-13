@@ -743,7 +743,7 @@ python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
 pip install -r requirements.txt
-pip install kivy[base] pillow numpy opencv-python requests qrcode[pil]
+pip install kivy[base] pillow numpy opencv-python requests qrcode[pil] ecdsa
 ```
 
 ### Step 4: Install Hardware Web3 Service Dependencies
@@ -779,7 +779,7 @@ Create `.env` files in `hardware-web3-service` and `lensmint-public-server` dire
 ### Step 7: Initialize Hardware Identity
 
 ```bash
-cd ../hardware-camera-app
+cd hardware-camera-app
 python3 hardware_identity.py
 ```
 
