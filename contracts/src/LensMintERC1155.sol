@@ -9,6 +9,8 @@ import "./DeviceRegistry.sol";
 contract LensMintERC1155 is ERC1155, Ownable {
     using Strings for uint256;
 
+    error UnauthorizedMinter();
+
     // Reference to device registry for validation
     DeviceRegistry public deviceRegistry;
     string public baseURI;
@@ -95,6 +97,8 @@ contract LensMintERC1155 is ERC1155, Ownable {
         TokenMetadata memory original = tokenMetadata[_originalTokenId];
         require(original.deviceAddress != address(0), "Token does not exist");
         require(original.isOriginal, "Token is not an original");
+        if (msg.sender != original.deviceAddress && msg.sender != owner())
+            revert UnauthorizedMinter();
         require(
             original.maxEditions == 0 || editionCount[_originalTokenId] < original.maxEditions,
             "Max editions reached"
@@ -133,6 +137,8 @@ contract LensMintERC1155 is ERC1155, Ownable {
         require(original.deviceAddress != address(0), "Token does not exist");
         require(original.isOriginal, "Token is not an original");
         require(_quantity > 0, "Quantity must be > 0");
+        if (msg.sender != original.deviceAddress && msg.sender != owner())
+            revert UnauthorizedMinter();
 
         uint256[] memory tokenIds = new uint256[](_quantity);
 
