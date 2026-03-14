@@ -4,6 +4,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./DeviceRegistry.sol";
 
 contract LensMintERC1155 is ERC1155, Ownable {
@@ -21,7 +23,7 @@ contract LensMintERC1155 is ERC1155, Ownable {
         string deviceId;
         string ipfsHash;
         string imageHash;
-        string signature;
+        bytes signature;
         uint256 timestamp;
         uint256 maxEditions;
         bool isOriginal;
@@ -71,8 +73,7 @@ contract LensMintERC1155 is ERC1155, Ownable {
         return r;
     }
 
-    function _verifySignature(string memory _imageHash, string memory _signature, address expectedSigner) internal pure returns (bool) {
-        bytes memory sig = _hexStringToBytes(_signature);
+    function _verifySignature(string memory _imageHash, bytes memory _signature, address expectedSigner) internal pure returns (bool) {
         bytes memory hashBytes = _hexStringToBytes(_imageHash);
         require(hashBytes.length == 32, "Invalid hash length");
         bytes32 messageHash;
@@ -80,36 +81,16 @@ contract LensMintERC1155 is ERC1155, Ownable {
             messageHash := mload(add(hashBytes, 32))
         }
 
-        if (sig.length == 65) {
-            bytes32 r;
-            bytes32 s;
-            uint8 v;
-            assembly {
-                r := mload(add(sig, 32))
-                s := mload(add(sig, 64))
-                v := byte(0, mload(add(sig, 96)))
-            }
-            if (v < 27) v += 27;
-            return ecrecover(messageHash, v, r, s) == expectedSigner;
-        } else if (sig.length == 64) {
-            bytes32 r;
-            bytes32 s;
-            assembly {
-                r := mload(add(sig, 32))
-                s := mload(add(sig, 64))
-            }
-            if (ecrecover(messageHash, 27, r, s) == expectedSigner) return true;
-            if (ecrecover(messageHash, 28, r, s) == expectedSigner) return true;
-            return false;
-        }
-        return false;
+        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        address recoveredSigner = ECDSA.recover(ethSignedHash, _signature);
+        return recoveredSigner == expectedSigner;
     }
 
     function mintOriginal(
         address _to,
         string memory _ipfsHash,
         string memory _imageHash,
-        string memory _signature,
+        bytes memory _signature,
         uint256 _maxEditions
     ) external returns (uint256) {
         require(

@@ -710,25 +710,13 @@ app.post('/api/images/upload', upload.single('image'), async (req, res) => {
       let sigHex = signature.startsWith('0x') ? signature : '0x' + signature;
       let hashHex = imageHash.startsWith('0x') ? imageHash : '0x' + imageHash;
       let isValid = false;
-
-      if (sigHex.length === 130) {
-        const r = sigHex.slice(0, 66);
-        const s = '0x' + sigHex.slice(66, 130);
-        try {
-          if (ethers.recoverAddress(hashHex, { r, s, v: 27 }).toLowerCase() === deviceAddress.toLowerCase()) isValid = true;
-        } catch (e) {}
-        try {
-          if (ethers.recoverAddress(hashHex, { r, s, v: 28 }).toLowerCase() === deviceAddress.toLowerCase()) isValid = true;
-        } catch (e) {}
-      } else {
-        try {
-          // If signature contains v (65 bytes)
-          if (ethers.recoverAddress(hashHex, sigHex).toLowerCase() === deviceAddress.toLowerCase()) isValid = true;
-        } catch (e) {}
-        try {
-          // Fallback to standard message prefix if signed manually via non-hardware wallet
-          if (ethers.verifyMessage(ethers.getBytes(hashHex), sigHex).toLowerCase() === deviceAddress.toLowerCase()) isValid = true;
-        } catch (e) {}
+      
+      try {
+        if (ethers.verifyMessage(ethers.getBytes(hashHex), sigHex).toLowerCase() === deviceAddress.toLowerCase()) {
+          isValid = true;
+        }
+      } catch (e) {
+        console.error('Signature recovery failed:', e.message);
       }
 
       if (!isValid) {
