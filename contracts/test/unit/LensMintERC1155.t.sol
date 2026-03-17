@@ -2,8 +2,8 @@
 pragma solidity ^0.8.31;
 
 import {Test} from "forge-std/Test.sol";
-import {LensMintERC1155} from "../src/LensMintERC1155.sol"; // solhint-disable-line
-import {DeviceRegistry} from "../src/DeviceRegistry.sol"; // solhint-disable-line
+import {LensMintERC1155} from "../../src/LensMintERC1155.sol"; // solhint-disable-line
+import {DeviceRegistry} from "../../src/DeviceRegistry.sol"; // solhint-disable-line
 
 /// @notice Unit tests for LensMintERC1155 (constructor, mintOriginal, mintEdition, batchMintEditions, getters, access control).
 contract LensMintERC1155Test is Test {

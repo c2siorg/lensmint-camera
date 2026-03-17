@@ -3,8 +3,8 @@ pragma solidity ^0.8.31;
 
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
-import {LensMintERC1155} from "../src/LensMintERC1155.sol";
-import {DeviceRegistry} from "../src/DeviceRegistry.sol";
+import {LensMintERC1155} from "../../src/LensMintERC1155.sol";
+import {DeviceRegistry} from "../../src/DeviceRegistry.sol";
 
 contract MintEditionDebugTest is Test {
     DeviceRegistry public deviceRegistry;

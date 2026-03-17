@@ -2,7 +2,7 @@
 pragma solidity ^0.8.31;
 
 import "forge-std/Test.sol";
-import "../src/LensMintVerifier.sol";
+import "../../src/LensMintVerifier.sol";
 
 /// @notice Mock that matches IRiscZeroVerifier.verify(bytes,bytes32,bytes32) used by LensMintVerifier.
 contract MockRiscZeroVerifier {
