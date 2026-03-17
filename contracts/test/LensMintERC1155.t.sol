@@ -107,7 +107,7 @@ contract LensMintERC1155Test is Test {
 
     function test_MintEdition_Success() public {
         vm.prank(device);
-        uint256 originalId = lensMint.mintOriginal(owner, IPFS_HASH, IMAGE_HASH, SIGNATURE, 0);
+        uint256 originalId = lensMint.mintOriginal(recipient, IPFS_HASH, IMAGE_HASH, SIGNATURE, 0);
 
         vm.prank(device);
         uint256 editionId = lensMint.mintEdition(recipient, originalId);
@@ -132,7 +132,7 @@ contract LensMintERC1155Test is Test {
 
     function test_MintEdition_Revert_TokenIsNotAnOriginal() public {
         vm.prank(device);
-        uint256 originalId = lensMint.mintOriginal(owner, IPFS_HASH, IMAGE_HASH, SIGNATURE, 0);
+        uint256 originalId = lensMint.mintOriginal(recipient, IPFS_HASH, IMAGE_HASH, SIGNATURE, 0);
         vm.prank(device);
         uint256 editionId = lensMint.mintEdition(recipient, originalId);
 
@@ -143,7 +143,7 @@ contract LensMintERC1155Test is Test {
 
     function test_MintEdition_Revert_MaxEditionsReached() public {
         vm.prank(device);
-        uint256 originalId = lensMint.mintOriginal(owner, IPFS_HASH, IMAGE_HASH, SIGNATURE, 1);
+        uint256 originalId = lensMint.mintOriginal(recipient, IPFS_HASH, IMAGE_HASH, SIGNATURE, 1);
         vm.prank(device);
         lensMint.mintEdition(recipient, originalId);
 
@@ -158,7 +158,7 @@ contract LensMintERC1155Test is Test {
 
     function test_BatchMintEditions_Success() public {
         vm.prank(device);
-        uint256 originalId = lensMint.mintOriginal(owner, IPFS_HASH, IMAGE_HASH, SIGNATURE, 0);
+        uint256 originalId = lensMint.mintOriginal(recipient, IPFS_HASH, IMAGE_HASH, SIGNATURE, 0);
 
         vm.prank(device);
         uint256[] memory tokenIds = lensMint.batchMintEditions(recipient, originalId, 3);
@@ -175,7 +175,7 @@ contract LensMintERC1155Test is Test {
 
     function test_BatchMintEditions_Revert_QuantityMustBeGreaterThanZero() public {
         vm.prank(device);
-        uint256 originalId = lensMint.mintOriginal(owner, IPFS_HASH, IMAGE_HASH, SIGNATURE, 0);
+        uint256 originalId = lensMint.mintOriginal(recipient, IPFS_HASH, IMAGE_HASH, SIGNATURE, 0);
         vm.prank(device);
         vm.expectRevert(LensMintERC1155.QuantityMustBeGreaterThanZero.selector);
         lensMint.batchMintEditions(recipient, originalId, 0);
@@ -183,7 +183,7 @@ contract LensMintERC1155Test is Test {
 
     function test_BatchMintEditions_Revert_MaxEditionsReached() public {
         vm.prank(device);
-        uint256 originalId = lensMint.mintOriginal(owner, IPFS_HASH, IMAGE_HASH, SIGNATURE, 2);
+        uint256 originalId = lensMint.mintOriginal(recipient, IPFS_HASH, IMAGE_HASH, SIGNATURE, 2);
         vm.prank(device);
         vm.expectRevert(LensMintERC1155.MaxEditionsReached.selector);
         lensMint.batchMintEditions(recipient, originalId, 3);
