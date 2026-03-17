@@ -16,7 +16,7 @@ pragma solidity ^0.8.31;
 import {IRiscZeroVerifier} from "risc0-risc0-ethereum-3.0.0/IRiscZeroVerifier.sol";
 
 contract LensMintVerifier {
-    
+
     /////////////////////////
     ///   ERRORS          ///
     /////////////////////////
@@ -35,7 +35,7 @@ contract LensMintVerifier {
 
     ///@dev Error to emit when the metadata is invalid
     error InvalidMetadata();
-
+    
     //////////////////////////
     ///   STATE VARIABLES  ///
     //////////////////////////
@@ -108,7 +108,7 @@ contract LensMintVerifier {
         EXPECTED_QUERIES_HASH = _expectedQueriesHash;
         expectedUrlPattern = _expectedUrlPattern;
     }
-
+ 
     ///@notice Function to submit metadata for verification
     ///@param claimId The claim ID for the metadata
     ///@param journalData The journal data for the ZK proof
@@ -170,7 +170,7 @@ contract LensMintVerifier {
     function getVerifiedMetadata(string memory claimId) external view returns (VerifiedMetadata memory) {
         return verifiedMetadata[claimId];
     }
-
+    
     ///@notice Function to get the claim ID for a token ID
     ///@param tokenId The token ID for the claim ID
     ///@return string The claim ID

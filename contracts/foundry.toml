@@ -6,7 +6,7 @@ solc_version = "0.8.31"
 optimizer = true
 optimizer_runs = 200
 via_ir = true
-evm_version = "cancun"
+evm_version = "paris"
 
 [profile.ci]
 fuzz = { runs = 100 }
@@ -20,3 +20,4 @@ mainnet = "${MAINNET_RPC_URL}"
 
 [etherscan]
 sepolia = { key = "${ETHERSCAN_API_KEY}" }
+

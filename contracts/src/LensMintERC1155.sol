@@ -53,16 +53,13 @@ contract LensMintERC1155 is ERC1155, Ownable {
     ///@dev Error to emit when the batch mint quantity is zero
     error QuantityMustBeGreaterThanZero();
 
-    ///@dev Error to emit when the sender is not authorized to mint editions
-    error NotAuthorizedToMintEditions();
-
     //////////////////////////
     ///   STATE VARIABLES  ///
     //////////////////////////
 
     ///@dev Reference to device registry for validation
     DeviceRegistry public deviceRegistry;
-
+    
     ///@dev Base URI for the token metadata
     string public baseURI;
 
@@ -123,6 +120,7 @@ contract LensMintERC1155 is ERC1155, Ownable {
         baseURI = _baseURI;
     }
 
+    
     ///@notice Function to mint an original token
     ///@param _to The address to mint the token to
     ///@param _ipfsHash The IPFS hash of the token
@@ -165,6 +163,7 @@ contract LensMintERC1155 is ERC1155, Ownable {
         return tokenId;
     }
 
+    
     ///@notice Function to mint an edition token
     ///@param _to The address to mint the token to
     ///@param _originalTokenId The ID of the original token
@@ -177,7 +176,7 @@ contract LensMintERC1155 is ERC1155, Ownable {
         if (!original.isOriginal) {
             revert TokenIsNotAnOriginal();
         }
-        if (original.maxEditions != 0 && editionCount[_originalTokenId] > original.maxEditions) {
+        if (original.maxEditions != 0 && editionCount[_originalTokenId] >= original.maxEditions) {
             revert MaxEditionsReached();
         }
 
@@ -205,6 +204,7 @@ contract LensMintERC1155 is ERC1155, Ownable {
         return tokenId;
     }
 
+    
     ///@notice Function to batch mint editions
     ///@param _to The address to mint the tokens to
     ///@param _originalTokenId The ID of the original token
@@ -221,17 +221,14 @@ contract LensMintERC1155 is ERC1155, Ownable {
         if (!original.isOriginal) {
             revert TokenIsNotAnOriginal();
         }
-        if (msg.sender != original.deviceAddress && msg.sender != owner()) {
-            revert NotAuthorizedToMintEditions();
-        }
         if (_quantity == 0) {
             revert QuantityMustBeGreaterThanZero();
         }
 
         uint256[] memory tokenIds = new uint256[](_quantity);
-    
+
         for (uint256 i = 0; i < _quantity; i++) {
-            if (original.maxEditions != 0 && editionCount[_originalTokenId] > original.maxEditions) {
+            if (original.maxEditions != 0 && editionCount[_originalTokenId] >= original.maxEditions) {
                 revert MaxEditionsReached();
             }
 
@@ -259,6 +256,7 @@ contract LensMintERC1155 is ERC1155, Ownable {
 
         return tokenIds;
     }
+
 
     ///@notice Function to get the metadata of a token
     ///@param _tokenId The ID of the token
