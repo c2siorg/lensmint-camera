@@ -13,10 +13,10 @@ pragma solidity ^0.8.31;
 #                                                                              #
 ##############################################################################*/
 
-import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
-import "./DeviceRegistry.sol";
+import {ERC1155} from "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Strings} from "@openzeppelin/contracts/utils/Strings.sol";
+import {DeviceRegistry} from "./DeviceRegistry.sol";
 
 /**
  * @title LensMintERC1155

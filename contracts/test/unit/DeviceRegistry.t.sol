@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.31;
 
-import "forge-std/Test.sol";
-import "../../src/DeviceRegistry.sol";
+import {Test} from "forge-std/Test.sol";
+import {DeviceRegistry} from "../../src/DeviceRegistry.sol";
 
 contract DeviceRegistryTest is Test {
     DeviceRegistry private registry;
