@@ -8,23 +8,29 @@
     "start": "node server.js",
     "dev": "nodemon server.js"
   },
-  "keywords": ["web3", "camera", "raspberry-pi", "lensmint"],
+  "keywords": [
+    "web3",
+    "camera",
+    "raspberry-pi",
+    "lensmint"
+  ],
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
+    "@filoz/synapse-sdk": "0.35.3",
+    "@lighthouse-web3/sdk": "^0.4.3",
+    "@privy-io/server-auth": "^1.0.0",
+    "axios": "^1.6.0",
+    "better-sqlite3": "^9.2.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "ethers": "^6.9.0",
-    "better-sqlite3": "^9.2.2",
-    "uuid": "^9.0.1",
-    "axios": "^1.6.0",
-    "multer": "^1.4.5-lts.1",
+    "express": "^4.18.2",
     "form-data": "^4.0.0",
-    "@filoz/synapse-sdk": "0.35.3",
-    "@lighthouse-web3/sdk": "^0.4.3",
+    "multer": "^1.4.5-lts.1",
+    "uuid": "^9.0.1",
     "viem": "^2.0.0",
-    "@privy-io/server-auth": "^1.0.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
