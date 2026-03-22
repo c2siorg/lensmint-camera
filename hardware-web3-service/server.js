@@ -248,11 +248,33 @@ function startClaimPolling() {
   console.log('✅ Claim polling started');
 }
 
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
+app.get('/health', async (req, res) => {
+  const deps = {
+    database: servicesInitialized,
+    blockchain: web3Service.initialized === true,
+    filecoin: filecoinService.initialized === true,
+    claimServer: false,
+    vlayerConfigured: !!(
+      process.env.WEB_PROVER_API_CLIENT_ID &&
+      process.env.WEB_PROVER_API_SECRET
+    )
+  };
+
+  try {
+    const claimPing = await claimClient.healthCheck();
+    deps.claimServer = claimPing?.status === 'ok';
+  } catch (e) {
+    deps.claimServer = false;
+  }
+
+  const allUp = Object.values(deps).every(Boolean);
+
+  res.status(allUp ? 200 : 503).json({
+    status: allUp ? 'ok' : 'degraded',
     service: 'LensMint Backend',
-    servicesInitialized
+    servicesInitialized,
+    dependencies: deps,
+    timestamp: new Date().toISOString()
   });
 });
 
