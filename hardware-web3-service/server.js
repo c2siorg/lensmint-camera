@@ -25,6 +25,20 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+const requiredEnv = [
+  'WEB_PROVER_API_CLIENT_ID',
+  'WEB_PROVER_API_SECRET',
+  'RPC_URL'
+];
+
+const missing = requiredEnv.filter((key) => !process.env[key]);
+
+if (missing.length > 0) {
+  console.warn('Missing environment variables:');
+  missing.forEach((key) => console.warn(`- ${key}`));
+  console.warn('Please check your .env configuration.\n');
+}
+
 // Enable CORS for all routes
 app.use(cors());
 
@@ -234,11 +248,33 @@ function startClaimPolling() {
   console.log('✅ Claim polling started');
 }
 
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
+app.get('/health', async (req, res) => {
+  const deps = {
+    database: servicesInitialized,
+    blockchain: web3Service.initialized === true,
+    filecoin: filecoinService.initialized === true,
+    claimServer: false,
+    vlayerConfigured: !!(
+      process.env.WEB_PROVER_API_CLIENT_ID &&
+      process.env.WEB_PROVER_API_SECRET
+    )
+  };
+
+  try {
+    const claimPing = await claimClient.healthCheck();
+    deps.claimServer = claimPing?.status === 'ok';
+  } catch (e) {
+    deps.claimServer = false;
+  }
+
+  const allUp = Object.values(deps).every(Boolean);
+
+  res.status(allUp ? 200 : 503).json({
+    status: allUp ? 'ok' : 'degraded',
     service: 'LensMint Backend',
-    servicesInitialized
+    servicesInitialized,
+    dependencies: deps,
+    timestamp: new Date().toISOString()
   });
 });
 
