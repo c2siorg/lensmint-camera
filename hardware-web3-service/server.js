@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
+import { z } from 'zod';
 import { v4 as uuidv4 } from 'uuid';
 import multer from 'multer';
 import dotenv from 'dotenv';
@@ -661,6 +662,13 @@ app.post('/api/device/update', async (req, res) => {
   }
 });
 
+const captureSchema = z.object({
+  deviceAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
+  imageHash: z.string().regex(/^(0x)?[a-fA-F0-9]{64}$/),
+  cameraId: z.string().max(64),
+  signature: z.string().optional()
+});
+
 app.post('/api/images/upload', upload.single('image'), async (req, res) => {
   try {
     if (!req.file) {
@@ -705,6 +713,22 @@ app.post('/api/images/upload', upload.single('image'), async (req, res) => {
         error: 'Missing required fields: imageHash, signature, cameraId, deviceAddress'
       });
     }
+    
+    try {
+  req.body = captureSchema.parse({
+    imageHash,
+    signature,
+    cameraId,
+    deviceAddress
+  });
+} catch (error) {
+  fs.unlinkSync(req.file.path);
+  return res.status(400).json({
+    success: false,
+    error: 'Invalid request payload',
+    details: error.errors?.map(e => e.message) || error.message
+  });
+}
 
     const filename = `photo_${Date.now()}.jpg`;
     const filepath = path.join(CAPTURES_PATH, filename);
