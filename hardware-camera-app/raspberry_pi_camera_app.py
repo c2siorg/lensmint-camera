@@ -14,6 +14,15 @@ from io import BytesIO
 import logging
 from logging import Filter
 
+# --- NEW: Import for Perceptual Hashing (pHash) ---
+try:
+    from PIL import Image
+    import imagehash
+    PHASH_AVAILABLE = True
+except ImportError:
+    PHASH_AVAILABLE = False
+    print("Warning: imagehash library not available. Install with: pip3 install imagehash Pillow")
+
 try:
     from hardware_identity import get_hardware_identity
     HARDWARE_IDENTITY_AVAILABLE = True
@@ -1198,8 +1207,18 @@ class CameraApp(App):
             with open(filename, 'rb') as f:
                 image_data = f.read()
             
-            # Compute image hash
+            # Compute strict image hash (SHA256)
             image_hash = hashlib.sha256(image_data).hexdigest()
+            
+            # --- NEW: Compute Perceptual Hash (pHash) for ZK compression tolerance ---
+            phash_value = ""
+            if PHASH_AVAILABLE:
+                try:
+                    img = Image.open(BytesIO(image_data))
+                    phash_value = str(imagehash.phash(img))
+                    print(f"Generated pHash for ZK verification: {phash_value}")
+                except Exception as e:
+                    print(f"Error generating pHash: {e}")
             
             # Get device info
             device_address = signature_info['address']
@@ -1209,6 +1228,7 @@ class CameraApp(App):
             files = {'image': (os.path.basename(filename), image_data, 'image/jpeg')}
             data = {
                 'imageHash': image_hash,
+                'pHash': phash_value,  # Inject pHash into the metadata payload
                 'signature': signature_info['signature'],
                 'cameraId': camera_id,
                 'deviceAddress': device_address
