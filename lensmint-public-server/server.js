@@ -93,6 +93,12 @@ app.post('/create-claim', (req, res) => {
       device_address || null
     );
 
+    // Set expiry for claim (default 15 min)
+const CLAIM_TTL_MINUTES = parseInt(process.env.CLAIM_TTL_MINUTES || '15');
+const expiresAt = Date.now() + CLAIM_TTL_MINUTES * 60 * 1000;
+
+dbService.setClaimExpiry(claim.claim_id, expiresAt);
+
     if (!claim) {
       return res.status(400).json({
         success: false,
@@ -1158,6 +1164,20 @@ app.post('/complete-claim', (req, res) => {
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', service: 'LensMint Claim Server' });
 });
+
+
+// Cleanup expired claims every 5 minutes
+setInterval(() => {
+  try {
+    const cleaned = dbService.cleanupExpiredClaims();
+    if (cleaned > 0) {
+      console.log(`[CLEANUP] Expired ${cleaned} stale claims`);
+    }
+  } catch (e) {
+    console.error('[CLEANUP] Error during claim cleanup:', e.message);
+  }
+}, 5 * 60 * 1000);
+
 
 app.listen(PORT, async () => {
   await initializeServices();

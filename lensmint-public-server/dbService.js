@@ -71,7 +71,8 @@ class ClaimDBService {
         token_id INTEGER,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         claimed_at DATETIME,
-        completed_at DATETIME
+        completed_at DATETIME,
+        expires_at INTEGER DEFAULT NULL
       )
     `);
 
@@ -80,7 +81,8 @@ class ClaimDBService {
       { name: 'camera_id', type: 'TEXT' },
       { name: 'image_hash', type: 'TEXT' },
       { name: 'signature', type: 'TEXT' },
-      { name: 'device_address', type: 'TEXT' }
+      { name: 'device_address', type: 'TEXT' },
+      { name: 'expires_at', type: 'INTEGER' }
     ];
 
     columnsToAdd.forEach(col => {
@@ -306,6 +308,31 @@ class ClaimDBService {
     const stmt = this.db.prepare('SELECT * FROM claims WHERE status = ? ORDER BY created_at DESC');
     return stmt.all(status);
   }
+
+  setClaimExpiry(claim_id, expires_at) {
+  const stmt = this.db.prepare(
+    'UPDATE claims SET expires_at = ? WHERE claim_id = ?'
+  );
+  stmt.run(expires_at, claim_id);
+}
+
+cleanupExpiredClaims() {
+  const stmt = this.db.prepare(`
+    UPDATE claims
+    SET status = 'expired'
+    WHERE expires_at IS NOT NULL
+      AND expires_at < ?
+      AND status = 'pending'
+  `);
+
+  const result = stmt.run(Date.now());
+
+  if (result.changes > 0) {
+    console.log(`[CLEANUP] Marked ${result.changes} expired claims`);
+  }
+
+  return result.changes;
+}
 
   createOrUpdateProof(claimId, tokenId, verificationStatus, proofTxHash = null) {
     const existing = this.getProof(claimId);
