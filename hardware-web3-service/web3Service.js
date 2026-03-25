@@ -260,6 +260,57 @@ class Web3Service {
     }
   }
 
+  /**
+   * Sign mint parameters using EIP-712 typed data.
+   * Returns { v, r, s } for on-chain verification.
+   */
+  async signMintOriginal({ recipient, ipfsHash, imageHash, maxEditions = 0 }) {
+    if (!this.deviceWallet) {
+      throw new Error('Device wallet not initialized');
+    }
+
+    // Read the current nonce from the contract
+    const nonce = await this.lensMint.nonces(this.deviceWallet.address);
+
+    // EIP-712 domain — must match the contract's EIP712 constructor args
+    const domain = {
+      name: 'LensMintERC1155',
+      version: '1',
+      chainId: (await this.provider.getNetwork()).chainId,
+      verifyingContract: await this.lensMint.getAddress()
+    };
+
+    const types = {
+      MintOriginal: [
+        { name: 'to', type: 'address' },
+        { name: 'ipfsHash', type: 'string' },
+        { name: 'imageHash', type: 'bytes32' },
+        { name: 'maxEditions', type: 'uint256' },
+        { name: 'nonce', type: 'uint256' }
+      ]
+    };
+
+    // imageHash must be bytes32 (0x-prefixed 32-byte hex)
+    const imageHashBytes32 = imageHash.startsWith('0x') ? imageHash : '0x' + imageHash;
+
+    const value = {
+      to: recipient,
+      ipfsHash: ipfsHash,
+      imageHash: imageHashBytes32,
+      maxEditions: maxEditions,
+      nonce: nonce
+    };
+
+    // Sign using ethers.js EIP-712 signer
+    const signature = await this.deviceWallet.signTypedData(domain, types, value);
+
+    // Split into v, r, s
+    const sig = ethers.Signature.from(signature);
+
+    console.log(`🔏 EIP-712 signature created for imageHash: ${imageHashBytes32}`);
+    return { v: sig.v, r: sig.r, s: sig.s, imageHashBytes32 };
+  }
+
   async mintOriginal(photoData) {
     if (!this.initialized || !this.deviceWallet) {
       throw new Error('Web3 service not initialized or device wallet not set');
@@ -270,7 +321,6 @@ class Web3Service {
         recipient,
         ipfsHash,
         imageHash,
-        signature,
         maxEditions = 0
       } = photoData;
 
@@ -278,7 +328,7 @@ class Web3Service {
       console.log(`🔍 [MINT] Checking device status for: ${deviceAddress}`);
       const isActive = await this.isDeviceActive(deviceAddress);
       console.log(`   📊 isDeviceActive result: ${isActive}`);
-      
+
       if (!isActive) {
         try {
           const deviceInfo = await this.getDeviceInfo(deviceAddress);
@@ -299,17 +349,27 @@ class Web3Service {
           throw new Error(`Device ${deviceAddress} not registered or inactive`);
         }
       }
-      
+
       console.log(`   ✅ Device ${deviceAddress} is registered and active - proceeding with mint`);
+
+      // Create EIP-712 signature
+      const { v, r, s, imageHashBytes32 } = await this.signMintOriginal({
+        recipient,
+        ipfsHash,
+        imageHash,
+        maxEditions
+      });
+
+      console.log(`   🔏 EIP-712 signed — v:${v} r:${r.slice(0,10)}... s:${s.slice(0,10)}...`);
 
       // Estimate gas before minting
       try {
         const gasEstimate = await this.lensMint.mintOriginal.estimateGas(
           recipient,
           ipfsHash,
-          imageHash,
-          signature,
-          maxEditions
+          imageHashBytes32,
+          maxEditions,
+          v, r, s
         );
         console.log(`   ⛽ Estimated gas: ${gasEstimate.toString()}`);
       } catch (gasError) {
@@ -319,9 +379,9 @@ class Web3Service {
       const tx = await this.lensMint.mintOriginal(
         recipient,
         ipfsHash,
-        imageHash,
-        signature,
-        maxEditions
+        imageHashBytes32,
+        maxEditions,
+        v, r, s
       );
 
       console.log(`🎨 Minting original photo NFT`);
@@ -329,7 +389,7 @@ class Web3Service {
       console.log(`   IPFS: ${ipfsHash}`);
 
       const receipt = await tx.wait();
-      
+
       const event = receipt.logs.find(log => {
         try {
           const parsed = this.lensMint.interface.parseLog(log);
@@ -537,10 +597,13 @@ class Web3Service {
 
   getLensMintABI() {
     return [
-      "function mintOriginal(address _to, string memory _ipfsHash, string memory _imageHash, string memory _signature, uint256 _maxEditions) external returns (uint256)",
+      "function mintOriginal(address _to, string memory _ipfsHash, bytes32 _imageHash, uint256 _maxEditions, uint8 v, bytes32 r, bytes32 s) external returns (uint256)",
       "function mintEdition(address _to, uint256 _originalTokenId) external returns (uint256)",
-      "function getTokenMetadata(uint256 _tokenId) external view returns (tuple(address deviceAddress, string deviceId, string ipfsHash, string imageHash, string signature, uint256 timestamp, uint256 maxEditions, bool isOriginal, uint256 originalTokenId))",
+      "function getTokenMetadata(uint256 _tokenId) external view returns (tuple(address deviceAddress, string deviceId, string ipfsHash, bytes32 imageHash, bytes signature, uint256 timestamp, uint256 maxEditions, bool isOriginal, uint256 originalTokenId))",
       "function getEditionCount(uint256 _originalTokenId) external view returns (uint256)",
+      "function nonces(address) external view returns (uint256)",
+      "function domainSeparator() external view returns (bytes32)",
+      "function usedImageHashes(bytes32) external view returns (bool)",
       "event TokenMinted(uint256 indexed tokenId, address indexed deviceAddress, string deviceId, string ipfsHash, bool isOriginal)",
       "event EditionMinted(uint256 indexed tokenId, uint256 indexed originalTokenId, address indexed to)"
     ];
