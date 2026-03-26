@@ -1,0 +1,30 @@
+name: PR Checks
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate PR
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check for .env files
+        run: |
+          if find . -name ".env" -not -path "./.git/*" | grep -q .; then
+            echo "ERROR: .env file found in repository. Remove it before merging."
+            exit 1
+          fi
+          echo "No .env files found. Safe to merge."
+
+      - name: Check for hardcoded secrets
+        run: |
+          if grep -r "PRIVY_APP_SECRET=" --include="*.js" --include="*.jsx" --include="*.ts" --include="*.tsx" .; then
+            echo "ERROR: Hardcoded secret detected in source files."
+            exit 1
+          fi
+          echo "No hardcoded secrets found."
