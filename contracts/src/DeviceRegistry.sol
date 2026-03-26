@@ -124,5 +124,35 @@ contract DeviceRegistry {
     function getAllDevices() external view returns (address[] memory) {
         return registeredDevices;
     }
+
+    /**
+     * @notice Returns a paginated slice of the registered devices array.
+     * @dev    Prevents out-of-gas on unbounded getAllDevices() calls at scale.
+     * @param _offset Starting index in the registeredDevices array
+     * @param _limit  Maximum number of addresses to return
+     * @return page   The slice of device addresses
+     * @return total  Total number of registered devices (for client-side paging)
+     */
+    function getDevicesPaginated(
+        uint256 _offset,
+        uint256 _limit
+    ) external view returns (address[] memory page, uint256 total) {
+        total = registeredDevices.length;
+
+        if (_offset >= total || _limit == 0) {
+            return (new address[](0), total);
+        }
+
+        uint256 end = _offset + _limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 size = end - _offset;
+        page = new address[](size);
+        for (uint256 i = 0; i < size; i++) {
+            page[i] = registeredDevices[_offset + i];
+        }
+    }
 }
 
