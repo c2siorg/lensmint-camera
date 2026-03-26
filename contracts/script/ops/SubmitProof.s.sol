@@ -6,25 +6,22 @@ import {LensMintVerifier} from "../src/LensMintVerifier.sol";
 
 contract SubmitProofScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
-        
         address verifierAddress = vm.envAddress("VERIFIER_CONTRACT_ADDRESS");
         string memory proofFilePath = vm.envString("PROOF_FILE");
-        
+
         console.log("=== Submitting ZK Proof ===");
-        console.log("Deployer:", deployer);
+        console.log("Signer: forge broadcast (see forge script --help)");
         console.log("Verifier Contract:", verifierAddress);
         console.log("Proof File:", proofFilePath);
-        
+
         string memory proofJson = vm.readFile(proofFilePath);
-        
-        vm.startBroadcast(deployerPrivateKey);
-        
+
+        vm.startBroadcast();
+
         LensMintVerifier verifier = LensMintVerifier(verifierAddress);
-        
+
         vm.stopBroadcast();
-        
+
         console.log("Proof submission complete");
     }
 }
