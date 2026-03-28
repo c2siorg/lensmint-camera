@@ -110,6 +110,11 @@ uploads/
 !assets/**/*.png
 !assets/**/*.gif
 !assets/**/*.webp
+!docs/**/*.jpg
+!docs/**/*.jpeg
+!docs/**/*.png
+!docs/**/*.gif
+!docs/**/*.webp
 
 # Coverage reports
 coverage/
