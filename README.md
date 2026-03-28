@@ -704,10 +704,19 @@ Every photo captured solves real problems:
 
 ### Step 1: Clone Repository
 
+Clone **with Git submodules** so Foundry dependencies under `contracts/lib` (e.g. `forge-std`, OpenZeppelin) are present for `forge build` / `forge test`:
+
 ```bash
 cd ~
-git clone <repository-url> lensmint
+git clone --recurse-submodules <repository-url> lensmint
 cd lensmint
+```
+
+If you already cloned without submodules, fetch them once:
+
+```bash
+cd lensmint
+git submodule update --init --recursive
 ```
 
 ### Step 2: Install System Dependencies
