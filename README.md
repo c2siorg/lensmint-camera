@@ -706,7 +706,7 @@ Every photo captured solves real problems:
 
 ```bash
 cd ~
-git clone <repository-url> lensmint
+git clone https://github.com/c2siorg/lensmint-camera.git lensmint
 cd lensmint
 ```
 
@@ -821,7 +821,7 @@ The owner portal will be available at `http://localhost:3000`. This allows the o
 - Setup session signers for backend transaction signing
 - Mint NFTs with automatic gas sponsorship
 
-See `PRIVY_SETUP.md` for detailed Privy configuration.
+See `PRIVY_SETUP.md` for detailed Privy configuration.(Coming Soon)
 
 ### Step 11: Setup Auto-Start (Optional)
 
@@ -1113,6 +1113,6 @@ Built with:
 
 **Made with ❤️ for the Web3 community**
 
-[⬆ Back to Top](#-lensmint---decentralized-camera-system-for-web3)
+[⬆ Back to Top](#-lensmint---web3-camera-with-proof-of-memory--zk-verification)
 
 </div>
