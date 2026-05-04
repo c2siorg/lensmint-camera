@@ -1,0 +1,13 @@
+[package]
+name = "lensmint-identity"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# 官方点名要求的加密库
+ed25519-dalek = { version = "2.0.0", features = ["rand_core"] }
+rand_core = { version = "0.6", features = ["getrandom"] }
+# 硬件随机数支持
+getrandom = { version = "0.2", features = ["js"] }
+# 十六进制编码支持
+hex = "0.4"

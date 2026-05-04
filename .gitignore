@@ -129,3 +129,6 @@ Cargo.lock
 *.old
 .cache/
 
+
+# Local ZK test environment
+zkvm_test/
