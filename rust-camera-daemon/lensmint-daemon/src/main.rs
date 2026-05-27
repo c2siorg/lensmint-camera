@@ -1,3 +1,4 @@
+mod keystore;
 mod app;
 mod backend;
 mod cmd;
