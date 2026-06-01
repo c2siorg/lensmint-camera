@@ -8,8 +8,6 @@ use cmd::DaemonCmd;
 
 #[tokio::main]
 async fn main() -> Result<(), eframe::Error> {
-    backend::init_camera();
-
     // Scaffold bounded channel (4 slots max for strict backpressure on SBC)
     let (tx, rx) = tokio::sync::mpsc::channel::<DaemonCmd>(4);
 

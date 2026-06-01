@@ -4,17 +4,7 @@ use std::time::Duration;
 use tokio::sync::mpsc;
 use crate::cmd::DaemonCmd;
 
-#[repr(C)]
-pub struct v4l2_capability {
-    pub driver: [u8; 16],
-    pub card: [u8; 32],
-    pub bus_info: [u8; 32],
-    pub version: u32,
-    pub capabilities: u32,
-    pub device_caps: u32,
-    pub reserved: [u32; 3],
-}
-
+// --- FFI Structs (AArch64 64-bit Strict Memory Layout) ---
 #[repr(C)]
 pub struct v4l2_pix_format {
     pub width: u32,
@@ -31,76 +21,150 @@ pub struct v4l2_pix_format {
     pub xfer_func: u32,
 }
 
-// Emulating C union with strict padding (200 bytes total for union, 48 used by pix)
 #[repr(C)]
 pub struct v4l2_format {
     pub type_: u32,
     pub fmt: v4l2_pix_format,
-    pub padding: [u8; 152], 
+    pub padding: [u8; 152],
 }
 
-const VIDIOC_QUERYCAP: libc::c_ulong = 0x80685600;
-// Magic number for _IOWR('V', 5, struct v4l2_format). Computed for 64-bit ABI.
-const VIDIOC_S_FMT: libc::c_ulong = 0xc0d05605; 
-const V4L2_BUF_TYPE_VIDEO_CAPTURE: u32 = 1;
+#[repr(C)]
+pub struct v4l2_requestbuffers {
+    pub count: u32,
+    pub type_: u32,
+    pub memory: u32,
+    pub capabilities: u32,
+    pub reserved: [u32; 1],
+}
 
-// Helper to construct FOURCC codes
+#[repr(C)]
+pub struct v4l2_buffer {
+    pub index: u32,
+    pub type_: u32,
+    pub bytesused: u32,
+    pub flags: u32,
+    pub field: u32,
+    _pad1: u32, // 64-bit alignment padding before timeval
+    pub timestamp_sec: i64,
+    pub timestamp_usec: i64,
+    pub timecode: [u8; 16],
+    pub sequence: u32,
+    pub memory: u32,
+    pub m_offset: u32, // union m { u32 offset; ... } mapped to offset
+    _pad2: u32,
+    pub length: u32,
+    pub reserved2: u32,
+    pub request_fd: i32,
+    _pad3: u32, // total struct size: 88 bytes
+}
+
+const VIDIOC_S_FMT: libc::c_ulong = 0xc0d05605;
+const VIDIOC_REQBUFS: libc::c_ulong = 0xc0145608;
+const VIDIOC_QUERYBUF: libc::c_ulong = 0xc0585609;
+
+const V4L2_BUF_TYPE_VIDEO_CAPTURE: u32 = 1;
+const V4L2_MEMORY_MMAP: u32 = 1;
+
 const fn v4l2_fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
     (a as u32) | ((b as u32) << 8) | ((c as u32) << 16) | ((d as u32) << 24)
 }
 
-fn parse_c_string(bytes: &[u8]) -> String {
-    let null_pos = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    String::from_utf8_lossy(&bytes[..null_pos]).into_owned()
+// --- Stateful RAII Hardware Wrapper ---
+pub struct CameraStream {
+    fd: RawFd,
+    mem_ptr: *mut libc::c_void,
+    mem_len: usize,
 }
 
-// Renamed from probe_camera to initialize camera state
-pub fn init_camera() {
-    println!("[FFI] Initializing /dev/video0...");
-    unsafe {
-        let dev_path = CString::new("/dev/video0").unwrap();
-        let fd: RawFd = libc::open(dev_path.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK);
-        
-        if fd < 0 {
-            println!("[FFI Error] Failed to open: {}", std::io::Error::last_os_error());
-            return;
-        }
+impl CameraStream {
+    pub fn new() -> Option<Self> {
+        println!("[Hardware] Opening /dev/video0 and setting up mmap...");
+        unsafe {
+            let path = CString::new("/dev/video0").unwrap();
+            let fd = libc::open(path.as_ptr(), libc::O_RDWR | libc::O_NONBLOCK);
+            if fd < 0 { return None; }
 
-        // 1. Probe Capabilities
-        let mut caps: v4l2_capability = std::mem::zeroed();
-        if libc::ioctl(fd, VIDIOC_QUERYCAP, &mut caps) < 0 {
-            println!("[FFI Error] VIDIOC_QUERYCAP failed");
-            libc::close(fd);
-            return;
-        }
-        println!("[FFI] Driver: {}", parse_c_string(&caps.driver));
+            // 1. Set Format
+            let mut fmt: v4l2_format = std::mem::zeroed();
+            fmt.type_ = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            fmt.fmt.width = 640;
+            fmt.fmt.height = 480;
+            fmt.fmt.pixelformat = v4l2_fourcc(b'Y', b'U', b'Y', b'V');
+            fmt.fmt.field = 1;
+            libc::ioctl(fd, VIDIOC_S_FMT, &mut fmt);
 
-        // 2. Set Video Format (640x480 YUYV)
-        let mut fmt: v4l2_format = std::mem::zeroed();
-        fmt.type_ = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        fmt.fmt.width = 640;
-        fmt.fmt.height = 480;
-        fmt.fmt.pixelformat = v4l2_fourcc(b'Y', b'U', b'Y', b'V');
-        fmt.fmt.field = 1; // V4L2_FIELD_NONE
+            // 2. Request Kernel Buffers (Zero-Copy)
+            let mut req: v4l2_requestbuffers = std::mem::zeroed();
+            req.count = 1;
+            req.type_ = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            req.memory = V4L2_MEMORY_MMAP;
+            if libc::ioctl(fd, VIDIOC_REQBUFS, &mut req) < 0 {
+                println!("[Hardware Error] VIDIOC_REQBUFS failed");
+                libc::close(fd);
+                return None;
+            }
 
-        let res = libc::ioctl(fd, VIDIOC_S_FMT, &mut fmt);
-        
-        if res < 0 {
-            println!("[FFI Error] VIDIOC_S_FMT failed: {}", std::io::Error::last_os_error());
-        } else {
-            println!("[FFI] Format set to {}x{} YUYV", fmt.fmt.width, fmt.fmt.height);
+            // 3. Query Buffer Offset for mapping
+            let mut buf: v4l2_buffer = std::mem::zeroed();
+            buf.type_ = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            buf.memory = V4L2_MEMORY_MMAP;
+            buf.index = 0;
+            if libc::ioctl(fd, VIDIOC_QUERYBUF, &mut buf) < 0 {
+                println!("[Hardware Error] VIDIOC_QUERYBUF failed");
+                libc::close(fd);
+                return None;
+            }
+
+            // 4. Map Kernel Memory to Rust Pointer
+            let ptr = libc::mmap(
+                std::ptr::null_mut(),
+                buf.length as usize,
+                libc::PROT_READ | libc::PROT_WRITE,
+                libc::MAP_SHARED,
+                fd,
+                buf.m_offset as libc::off_t,
+            );
+
+            if ptr == libc::MAP_FAILED {
+                println!("[Hardware Error] libc::mmap failed");
+                libc::close(fd);
+                return None;
+            }
+
+            println!("[Hardware] Zero-Copy MMAP Success: {} bytes at mapped offset.", buf.length);
+            Some(Self { fd, mem_ptr: ptr, mem_len: buf.length as usize })
         }
-        
-        libc::close(fd);
     }
 }
 
+impl Drop for CameraStream {
+    fn drop(&mut self) {
+        unsafe {
+            if !self.mem_ptr.is_null() && self.mem_ptr != libc::MAP_FAILED {
+                libc::munmap(self.mem_ptr, self.mem_len);
+            }
+            libc::close(self.fd);
+            println!("[Hardware] Camera stream safely closed & munmapped.");
+        }
+    }
+}
+
+// 明确告诉编译器：跨线程转移 mmap 裸指针的所有权是安全的
+unsafe impl Send for CameraStream {}
+unsafe impl Sync for CameraStream {}
+
+// Background Worker Loop
 pub async fn run_backend(mut rx: mpsc::Receiver<DaemonCmd>) {
+    let _camera = CameraStream::new();
+    if _camera.is_none() {
+        println!("[Worker] Failed to initialize camera. Running worker in idle mode.");
+    }
+
     while let Some(cmd) = rx.recv().await {
         match cmd {
             DaemonCmd::CapturePhoto => {
                 tokio::time::sleep(Duration::from_secs(2)).await;
-                println!("[Backend] Photo saved");
+                println!("[Worker] Photo saved");
             }
         }
     }
