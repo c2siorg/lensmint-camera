@@ -16,6 +16,7 @@ impl eframe::App for LensMintApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("LensMint Camera Daemon");
+            ui.label("Hardware MVP: AArch64 Native Render (60FPS Target)"); // 新增：用于在实机确认运行版本
 
             if ui.button("Capture Photo").clicked() {
                 match self.tx.try_send(DaemonCmd::CapturePhoto) {
@@ -31,5 +32,8 @@ impl eframe::App for LensMintApp {
                 }
             }
         });
+
+        // 核心注入：强制 UI 线程不休眠，每帧重绘，用于测试树莓派 GPU/CPU 负载
+        ctx.request_repaint();
     }
 }
