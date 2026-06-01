@@ -8,6 +8,9 @@ use cmd::DaemonCmd;
 
 #[tokio::main]
 async fn main() -> Result<(), eframe::Error> {
+    // Probe camera hardware before starting the UI or workers
+    backend::probe_camera();
+
     // Scaffold bounded channel (4 slots max for strict backpressure on SBC)
     let (tx, rx) = tokio::sync::mpsc::channel::<DaemonCmd>(4);
 
