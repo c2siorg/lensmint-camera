@@ -16,6 +16,6 @@ deploy: build
 	scp {{APP_DIR}}/target/{{TARGET}}/release/lensmint-daemon {{PI_USER}}@{{PI_IP}}:/tmp/lensmint-daemon
 
 run: deploy
-	ssh {{PI_USER}}@{{PI_IP}} "RUST_BACKTRACE=1 WINIT_UNIX_BACKEND=x11 DISPLAY=:0 /tmp/lensmint-daemon"
+	ssh {{PI_USER}}@{{PI_IP}} "libcamerify /tmp/lensmint-daemon"
 
 dev: run
