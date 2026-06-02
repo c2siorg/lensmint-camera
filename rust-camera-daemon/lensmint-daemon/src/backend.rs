@@ -200,36 +200,81 @@ impl Drop for CameraStream {
     }
 }
 
+
+// 高性能定点数 YUYV 到 RGBA 转换 (避开浮点运算，榨干 SBC 性能)
+pub fn yuyv_to_rgba(yuyv: &[u8], width: usize, height: usize) -> Vec<u8> {
+    let pixel_count = width * height;
+    let mut rgba = vec![255; pixel_count * 4]; // 预分配内存，Alpha 通道默认全 255(不透明)
+
+    // 每次处理 4 个 YUYV 字节 -> 生成 2 个像素 (8 个 RGBA 字节)
+    let chunks = pixel_count / 2;
+    for i in 0..chunks {
+        let y0 = yuyv[i * 4] as i32;
+        let u  = yuyv[i * 4 + 1] as i32 - 128;
+        let y1 = yuyv[i * 4 + 2] as i32;
+        let v  = yuyv[i * 4 + 3] as i32 - 128;
+
+        // 定点数转换公式 (相比 f32 提升巨大)
+        let r_add = (104597 * v) >> 16;
+        let g_sub = (25675 * u + 53279 * v) >> 16;
+        let b_add = (132201 * u) >> 16;
+
+        let r0 = (y0 + r_add).clamp(0, 255) as u8;
+        let g0 = (y0 - g_sub).clamp(0, 255) as u8;
+        let b0 = (y0 + b_add).clamp(0, 255) as u8;
+
+        let r1 = (y1 + r_add).clamp(0, 255) as u8;
+        let g1 = (y1 - g_sub).clamp(0, 255) as u8;
+        let b1 = (y1 + b_add).clamp(0, 255) as u8;
+
+        let out_idx = i * 8;
+        rgba[out_idx] = r0;
+        rgba[out_idx + 1] = g0;
+        rgba[out_idx + 2] = b0;
+        // rgba[out_idx + 3] = 255 (已默认)
+
+        rgba[out_idx + 4] = r1;
+        rgba[out_idx + 5] = g1;
+        rgba[out_idx + 6] = b1;
+        // rgba[out_idx + 7] = 255
+    }
+
+    rgba
+}
+
 pub async fn run_backend(mut rx: mpsc::Receiver<DaemonCmd>) {
     let camera = CameraStream::new();
     if let Some(cam) = &camera {
         if !cam.start_stream() {
             println!("[Worker] Failed to start stream.");
         }
-    } else {
-        println!("[Worker] Failed to initialize camera.");
     }
 
-    // Tokio async loop: non-blocking frame grabbing
     loop {
-        // Non-blocking UI command processing
         if let Ok(cmd) = rx.try_recv() {
             match cmd {
                 DaemonCmd::CapturePhoto => println!("[Worker] Photo saved"),
             }
         }
 
-        // Try grabbing a frame from hardware
         if let Some(cam) = &camera {
             if cam.grab_frame() {
-                // If frame grabbed, sleep 33ms (~30 FPS) before next frame
+                // 截取一帧所需的精确字节数 (640 * 480 * 2 = 614400 字节)
+                let frame_size = 640 * 480 * 2;
+                let data_slice = unsafe { std::slice::from_raw_parts(cam.mem_ptr as *const u8, frame_size) };
+                
+                // 测算转换耗时
+                let start_time = std::time::Instant::now();
+                let _rgba_data = yuyv_to_rgba(data_slice, 640, 480);
+                let elapsed = start_time.elapsed();
+                
+                println!("[Worker] Computed RGB frame in {:?}", elapsed);
+
                 tokio::time::sleep(Duration::from_millis(33)).await;
             } else {
-                // If EAGAIN (no frame), sleep 5ms to yield CPU, prevent 100% core usage
                 tokio::time::sleep(Duration::from_millis(5)).await;
             }
         } else {
-            // Idle loop if no camera
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
