@@ -16,6 +16,6 @@ deploy: build
 	scp {{APP_DIR}}/target/{{TARGET}}/release/lensmint-daemon {{PI_USER}}@{{PI_IP}}:/tmp/lensmint-daemon
 
 run: deploy
-	ssh {{PI_USER}}@{{PI_IP}} "libcamerify /tmp/lensmint-daemon"
+	ssh {{PI_USER}}@{{PI_IP}} "export XDG_RUNTIME_DIR=/run/user/1000 && export DISPLAY=:0 && export WAYLAND_DISPLAY=\$(ls /run/user/1000 | grep -m1 '^wayland-[0-9]') && libcamerify /tmp/lensmint-daemon"
 
 dev: run

@@ -1,11 +1,11 @@
-use eframe::egui;
 use std::ffi::CString;
 use std::os::unix::io::RawFd;
-use std::time::Duration;
 use tokio::sync::mpsc;
+use std::sync::{Arc, Mutex};
+use eframe::egui;
+use std::time::Duration;
 use crate::cmd::DaemonCmd;
 
-// --- FFI Structs ---
 #[repr(C)]
 pub struct v4l2_pix_format {
     pub width: u32,
@@ -25,6 +25,7 @@ pub struct v4l2_pix_format {
 #[repr(C)]
 pub struct v4l2_format {
     pub type_: u32,
+    pub _pad0: u32, // Critical: 64-bit ABI alignment padding for AArch64
     pub fmt: v4l2_pix_format,
     pub padding: [u8; 152],
 }
@@ -76,11 +77,8 @@ const fn v4l2_fourcc(a: u8, b: u8, c: u8, d: u8) -> u32 {
 
 pub struct CameraStream {
     fd: RawFd,
-    pub mem_ptr: *mut libc::c_void,
-    pub mem_len: usize,
-    pub width: usize,
-    pub height: usize,
-    pub stride: usize, // 新增：保存硬件真实的内存跨距
+    mem_ptr: *mut libc::c_void,
+    mem_len: usize,
 }
 
 unsafe impl Send for CameraStream {}
@@ -100,11 +98,6 @@ impl CameraStream {
             fmt.fmt.pixelformat = v4l2_fourcc(b'Y', b'U', b'Y', b'V');
             fmt.fmt.field = 1;
             libc::ioctl(fd, VIDIOC_S_FMT, &mut fmt);
-
-            let stride = fmt.fmt.bytesperline as usize;
-            let width = fmt.fmt.width as usize;
-            let height = fmt.fmt.height as usize;
-            println!("[Hardware] Negotiated Format: {}x{}, Stride: {} bytes/line", width, height, stride);
 
             let mut req: v4l2_requestbuffers = std::mem::zeroed();
             req.count = 1;
@@ -128,20 +121,7 @@ impl CameraStream {
             );
 
             if ptr == libc::MAP_FAILED { return None; }
-            
-            Some(Self { fd, mem_ptr: ptr, mem_len: buf.length as usize, width, height, stride })
-        }
-    }
-
-    pub fn grab_frame(&self) -> bool {
-        unsafe {
-            let mut buf: v4l2_buffer = std::mem::zeroed();
-            buf.type_ = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-            buf.memory = V4L2_MEMORY_MMAP;
-            let res = libc::ioctl(self.fd, VIDIOC_DQBUF, &mut buf);
-            if res < 0 { return false; }
-            libc::ioctl(self.fd, VIDIOC_QBUF, &mut buf);
-            true
+            Some(Self { fd, mem_ptr: ptr, mem_len: buf.length as usize })
         }
     }
 
@@ -155,6 +135,18 @@ impl CameraStream {
 
             let mut type_ = V4L2_BUF_TYPE_VIDEO_CAPTURE;
             if libc::ioctl(self.fd, VIDIOC_STREAMON, &mut type_) < 0 { return false; }
+            true
+        }
+    }
+
+    pub fn grab_frame(&self) -> bool {
+        unsafe {
+            let mut buf: v4l2_buffer = std::mem::zeroed();
+            buf.type_ = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+            buf.memory = V4L2_MEMORY_MMAP;
+
+            if libc::ioctl(self.fd, VIDIOC_DQBUF, &mut buf) < 0 { return false; }
+            libc::ioctl(self.fd, VIDIOC_QBUF, &mut buf);
             true
         }
     }
@@ -173,10 +165,7 @@ impl Drop for CameraStream {
     }
 }
 
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
-
-// 支持动态 Stride 的二维 YUYV 到 RGBA 转换
+// CPU-based color space conversion (fixed-point math)
 pub fn yuyv_to_rgba(yuyv: &[u8], width: usize, height: usize, stride: usize) -> Vec<u8> {
     let mut rgba = vec![255; width * height * 4];
 
@@ -185,8 +174,6 @@ pub fn yuyv_to_rgba(yuyv: &[u8], width: usize, height: usize, stride: usize) -> 
         
         for x in (0..width).step_by(2) {
             let i = row_start + x * 2;
-            
-            // 内存安全锁：如果跨距拉得过大，防止访问越界
             if i + 3 >= yuyv.len() { break; }
 
             let y0 = yuyv[i] as i32;
@@ -215,14 +202,11 @@ pub fn yuyv_to_rgba(yuyv: &[u8], width: usize, height: usize, stride: usize) -> 
 pub async fn run_backend(
     mut rx: mpsc::Receiver<DaemonCmd>, 
     shared_frame: Arc<Mutex<Vec<u8>>>,
-    shared_stride: Arc<AtomicUsize>, // 接收 UI 传来的实时滑块数据
     ctx: egui::Context,
 ) {
     let camera = CameraStream::new();
     if let Some(cam) = &camera {
-        if !cam.start_stream() {
-            println!("[Worker] Failed to start stream.");
-        }
+        cam.start_stream();
     }
 
     loop {
@@ -234,23 +218,21 @@ pub async fn run_backend(
 
         if let Some(cam) = &camera {
             if cam.grab_frame() {
-                // 读取实时跨距
-                let current_stride = shared_stride.load(Ordering::Relaxed);
-                
-                // 将整个 15MB 物理内存传给算法，防止读取越界
+                // Read frame with confirmed hardware stride of 1280
                 let data_slice = unsafe { std::slice::from_raw_parts(cam.mem_ptr as *const u8, cam.mem_len) };
-                
-                let rgba_data = yuyv_to_rgba(data_slice, 640, 480, current_stride);
+                let rgba_data = yuyv_to_rgba(data_slice, 640, 480, 1280);
                 
                 if let Ok(mut frame) = shared_frame.lock() {
                     *frame = rgba_data;
                 }
+                
+                // Trigger UI thread repaint
                 ctx.request_repaint();
             } else {
-                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
         } else {
-            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
     }
 }
