@@ -60,6 +60,41 @@ pub struct v4l2_buffer {
     _pad3: u32,
 }
 
+// #[repr(C, packed)]
+// pub struct v4l2_ext_control {
+//     pub id: u32,
+//     pub size: u32,
+//     pub reserved2: [u32; 1],
+//     pub value: i32,
+//     pub _padding: u32,
+// }
+
+// #[repr(C)]
+// pub struct v4l2_ext_controls {
+//     pub ctrl_class: u32,
+//     pub count: u32,
+//     pub error_idx: u32,
+//     pub request_fd: i32,
+//     pub reserved: [u32; 1],
+//     pub _pad0: u32, // CRITICAL: 4-byte padding for 64-bit pointer alignment
+//     pub controls: *mut v4l2_ext_control,
+// }
+
+// const VIDIOC_S_EXT_CTRLS: libc::c_ulong = 0xc0205648;
+// const V4L2_CTRL_CLASS_CAMERA: u32 = 0x009a0000;
+// const V4L2_CID_FOCUS_ABSOLUTE: u32 = V4L2_CTRL_CLASS_CAMERA | 0x000a;
+
+#[repr(C)]
+pub struct v4l2_control {
+    pub id: u32,
+    pub value: i32,
+}
+
+const VIDIOC_S_CTRL: libc::c_ulong = 0xc008561c;
+const V4L2_CTRL_CLASS_CAMERA: u32 = 0x009a0000;
+const V4L2_CID_FOCUS_ABSOLUTE: u32 = V4L2_CTRL_CLASS_CAMERA | 0x000a;
+
+
 const VIDIOC_S_FMT: libc::c_ulong = 0xc0d05605;
 const VIDIOC_REQBUFS: libc::c_ulong = 0xc0145608;
 const VIDIOC_QUERYBUF: libc::c_ulong = 0xc0585609;
@@ -150,6 +185,49 @@ impl CameraStream {
             true
         }
     }
+
+    // pub fn set_focus(&self, value: i32) -> Result<(), std::io::Error> {
+    //     let mut ctrl = v4l2_ext_control {
+    //         id: V4L2_CID_FOCUS_ABSOLUTE,
+    //         size: 0,
+    //         reserved2: [0; 1],
+    //         value,
+    //         _padding: 0,
+    //     };
+
+    //     let mut ctrls = v4l2_ext_controls {
+    //         ctrl_class: V4L2_CTRL_CLASS_CAMERA,
+    //         count: 1,
+    //         error_idx: 0,
+    //         request_fd: 0,
+    //         reserved: [0; 1],
+    //         _pad0: 0,
+    //         controls: &mut ctrl,
+    //     };
+
+    //     unsafe {
+    //         let res = libc::ioctl(self.fd, VIDIOC_S_EXT_CTRLS, &mut ctrls);
+    //         if res < 0 {
+    //             return Err(std::io::Error::last_os_error());
+    //         }
+    //     }
+    //     Ok(())
+    // }
+
+    pub fn set_focus(&self, value: i32) -> Result<(), std::io::Error> {
+        let mut ctrl = v4l2_control {
+            id: V4L2_CID_FOCUS_ABSOLUTE,
+            value,
+        };
+
+        unsafe {
+            let res = libc::ioctl(self.fd, VIDIOC_S_CTRL, &mut ctrl);
+            if res < 0 {
+                return Err(std::io::Error::last_os_error());
+            }
+        }
+        Ok(())
+    }
 }
 
 impl Drop for CameraStream {
@@ -199,40 +277,57 @@ pub fn yuyv_to_rgba(yuyv: &[u8], width: usize, height: usize, stride: usize) -> 
     rgba
 }
 
+use std::sync::atomic::{AtomicI32, Ordering};
+
 pub async fn run_backend(
     mut rx: mpsc::Receiver<DaemonCmd>, 
     shared_frame: Arc<Mutex<Vec<u8>>>,
+    shared_focus: Arc<AtomicI32>, // Hardware confirmed state
     ctx: egui::Context,
 ) {
     let camera = CameraStream::new();
     if let Some(cam) = &camera {
-        cam.start_stream();
+        if !cam.start_stream() {
+            println!("[Worker] Failed to start stream.");
+        }
     }
 
     loop {
         if let Ok(cmd) = rx.try_recv() {
             match cmd {
                 DaemonCmd::CapturePhoto => println!("[Worker] Photo saved"),
+                DaemonCmd::SetFocus(val) => {
+                    if let Some(cam) = &camera {
+                        match cam.set_focus(val) {
+                            Ok(_) => {
+                                // Hardware accepted, update truth state
+                                shared_focus.store(val, Ordering::Relaxed);
+                                println!("[Hardware] Focus locked to {}", val);
+                            }
+                            Err(e) => {
+                                // e.g., EBUSY. Do NOT update shared_focus.
+                                println!("[Hardware Error] SetFocus failed: {}", e);
+                            }
+                        }
+                    }
+                }
             }
         }
 
         if let Some(cam) = &camera {
             if cam.grab_frame() {
-                // Read frame with confirmed hardware stride of 1280
                 let data_slice = unsafe { std::slice::from_raw_parts(cam.mem_ptr as *const u8, cam.mem_len) };
                 let rgba_data = yuyv_to_rgba(data_slice, 640, 480, 1280);
                 
                 if let Ok(mut frame) = shared_frame.lock() {
                     *frame = rgba_data;
                 }
-                
-                // Trigger UI thread repaint
                 ctx.request_repaint();
             } else {
-                tokio::time::sleep(Duration::from_millis(5)).await;
+                tokio::time::sleep(std::time::Duration::from_millis(5)).await;
             }
         } else {
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     }
 }

@@ -6,14 +6,15 @@ mod cmd;
 use app::LensMintApp;
 use cmd::DaemonCmd;
 use std::sync::{Arc, Mutex};
+use std::sync::atomic::AtomicI32; // Added
 
 #[tokio::main]
 async fn main() -> Result<(), eframe::Error> {
-    // 4-slot channel to handle IO backpressure safely
     let (tx, rx) = tokio::sync::mpsc::channel::<DaemonCmd>(4);
     
-    // Shared frame buffer: 640 x 480 x 4 bytes (RGBA8888)
     let shared_frame = Arc::new(Mutex::new(vec![0; 640 * 480 * 4]));
+    // Default focus value (0 to 1023 is typical for IMX708 VCM)
+    let shared_focus = Arc::new(AtomicI32::new(0)); 
 
     let options = eframe::NativeOptions::default();
     
@@ -23,13 +24,13 @@ async fn main() -> Result<(), eframe::Error> {
         Box::new(move |cc| {
             let ctx = cc.egui_ctx.clone();
             let frame_clone = shared_frame.clone();
+            let focus_clone = shared_focus.clone();
             
-            // Spawn detached async worker for hardware IO
             tokio::spawn(async move {
-                backend::run_backend(rx, frame_clone, ctx).await;
+                backend::run_backend(rx, frame_clone, focus_clone, ctx).await;
             });
 
-            Ok(Box::new(LensMintApp::new(tx, shared_frame)))
+            Ok(Box::new(LensMintApp::new(tx, shared_frame, shared_focus)))
         }),
     )
 }
