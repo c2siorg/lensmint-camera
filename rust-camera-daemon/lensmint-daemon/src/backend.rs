@@ -165,15 +165,14 @@ impl Drop for CameraStream {
     }
 }
 
-// CPU-based color space conversion (fixed-point math)
-pub fn yuyv_to_rgba(yuyv: &[u8], width: usize, height: usize, stride: usize) -> Vec<u8> {
-    let mut rgba = vec![255; width * height * 4];
-
+// in-place yuyv parsing. eliminates vec allocation in hot loop.
+pub fn yuyv_to_rgba_in_place(yuyv: &[u8], rgba: &mut [u8], width: usize, height: usize, stride: usize) {
     for y in 0..height {
         let row_start = y * stride;
         
         for x in (0..width).step_by(2) {
             let i = row_start + x * 2;
+            // bounds check to prevent panic during hardware tearing
             if i + 3 >= yuyv.len() { break; }
 
             let y0 = yuyv[i] as i32;
@@ -181,22 +180,26 @@ pub fn yuyv_to_rgba(yuyv: &[u8], width: usize, height: usize, stride: usize) -> 
             let y1 = yuyv[i + 2] as i32;
             let v  = yuyv[i + 3] as i32 - 128;
 
+            // fixed-point math for ARM. much faster than floats.
             let r_add = (104597 * v) >> 16;
             let g_sub = (25675 * u + 53279 * v) >> 16;
             let b_add = (132201 * u) >> 16;
 
             let out_idx = (y * width + x) * 4;
 
-            rgba[out_idx] = (y0 + r_add).clamp(0, 255) as u8;
+            // pixel 0
+            rgba[out_idx]     = (y0 + r_add).clamp(0, 255) as u8;
             rgba[out_idx + 1] = (y0 - g_sub).clamp(0, 255) as u8;
             rgba[out_idx + 2] = (y0 + b_add).clamp(0, 255) as u8;
+            rgba[out_idx + 3] = 255; 
             
+            // pixel 1
             rgba[out_idx + 4] = (y1 + r_add).clamp(0, 255) as u8;
             rgba[out_idx + 5] = (y1 - g_sub).clamp(0, 255) as u8;
             rgba[out_idx + 6] = (y1 + b_add).clamp(0, 255) as u8;
+            rgba[out_idx + 7] = 255; 
         }
     }
-    rgba
 }
 
 pub async fn run_backend(
@@ -209,6 +212,9 @@ pub async fn run_backend(
         cam.start_stream();
     }
 
+    // pre-allocate 1.2MB buffer once. zero allocations inside the loop.
+    let mut local_rgba = vec![255u8; 640 * 480 * 4];
+
     loop {
         if let Ok(cmd) = rx.try_recv() {
             match cmd {
@@ -218,15 +224,18 @@ pub async fn run_backend(
 
         if let Some(cam) = &camera {
             if cam.grab_frame() {
-                // Read frame with confirmed hardware stride of 1280
                 let data_slice = unsafe { std::slice::from_raw_parts(cam.mem_ptr as *const u8, cam.mem_len) };
-                let rgba_data = yuyv_to_rgba(data_slice, 640, 480, 1280);
                 
+                yuyv_to_rgba_in_place(data_slice, &mut local_rgba, 640, 480, 1280);
+                
+                // fast lock and memcpy
                 if let Ok(mut frame) = shared_frame.lock() {
-                    *frame = rgba_data;
+                    if frame.len() != local_rgba.len() {
+                        frame.resize(local_rgba.len(), 255);
+                    }
+                    frame.copy_from_slice(&local_rgba);
                 }
                 
-                // Trigger UI thread repaint
                 ctx.request_repaint();
             } else {
                 tokio::time::sleep(Duration::from_millis(5)).await;
