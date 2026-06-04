@@ -7,7 +7,8 @@ pub struct LensMintApp {
     tx: tokio::sync::mpsc::Sender<DaemonCmd>,
     shared_frame: Arc<Mutex<Vec<u8>>>,
     shared_focus: Arc<AtomicI32>,
-    local_focus: i32, // UI local state
+    local_focus: i32, // Hardware focus UI state
+    zoom_level: f32,  // Software zoom UI state
     texture: Option<egui::TextureHandle>,
 }
 
@@ -23,6 +24,7 @@ impl LensMintApp {
             shared_frame, 
             shared_focus,
             local_focus,
+            zoom_level: 1.0, 
             texture: None 
         }
     }
@@ -33,21 +35,22 @@ impl eframe::App for LensMintApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("LensMint OS: Live View & Lens Control");
 
-            // Hardware Focus Slider
+            // --- 1. Hardware Focus (Issue 5) ---
             let focus_slider = ui.add(
                 egui::Slider::new(&mut self.local_focus, 0..=1023).text("Physical Focus")
             );
 
-            // Send command immediately when value changes
             if focus_slider.changed() {
                 let _ = self.tx.try_send(DaemonCmd::SetFocus(self.local_focus));
             }
-
-            // Resilience logic: Snap back if not dragging and hardware rejected the value
             if !focus_slider.dragged() {
                 self.local_focus = self.shared_focus.load(Ordering::Relaxed);
             }
 
+            // --- 2. Digital Zoom (Issue 6) ---
+            ui.add(egui::Slider::new(&mut self.zoom_level, 1.0..=3.0).text("Digital Zoom"));
+
+            // --- 3. Render Pipeline ---
             if let Ok(frame_data) = self.shared_frame.lock() {
                 if frame_data.len() == 640 * 480 * 4 {
                     let image = egui::ColorImage::from_rgba_unmultiplied([640, 480], &frame_data);
@@ -55,11 +58,22 @@ impl eframe::App for LensMintApp {
                         ctx.load_texture("camera_stream", image.clone(), egui::TextureOptions::LINEAR)
                     });
                     tex.set(image, egui::TextureOptions::LINEAR);
-                    ui.image(&*tex);
+
+                    // UV Math for Zero-Overhead Zoom
+                    let offset = (1.0 - (1.0 / self.zoom_level)) / 2.0;
+                    let min_uv = egui::pos2(offset, offset);
+                    let max_uv = egui::pos2(1.0 - offset, 1.0 - offset);
+
+                    let sized_image = egui::Image::new((tex.id(), egui::vec2(640.0, 480.0)))
+                        .uv(egui::Rect::from_min_max(min_uv, max_uv));
+                    
+                    ui.add(sized_image);
                 }
             }
             
-            if ui.button("Mint Photo (Take)").clicked() {
+            ui.separator();
+            
+            if ui.button("Capture & Mint (Ed25519)").clicked() {
                 let _ = self.tx.try_send(DaemonCmd::CapturePhoto);
             }
         });
