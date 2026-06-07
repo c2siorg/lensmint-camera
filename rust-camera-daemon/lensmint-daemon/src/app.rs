@@ -7,6 +7,7 @@ pub struct LensMintApp {
     tx: tokio::sync::mpsc::Sender<DaemonCmd>,
     shared_frame: Arc<Mutex<Vec<u8>>>,
     shared_focus: Arc<AtomicI32>,
+    db: Arc<sled::Db>,
     local_focus: i32, // Hardware focus UI state
     zoom_level: f32,  // Software zoom UI state
     texture: Option<egui::TextureHandle>,
@@ -17,6 +18,7 @@ impl LensMintApp {
         tx: tokio::sync::mpsc::Sender<DaemonCmd>, 
         shared_frame: Arc<Mutex<Vec<u8>>>,
         shared_focus: Arc<AtomicI32>,
+        db: Arc<sled::Db>,
     ) -> Self {
         let local_focus = shared_focus.load(Ordering::Relaxed);
         Self { 
@@ -24,6 +26,7 @@ impl LensMintApp {
             shared_frame, 
             shared_focus,
             local_focus,
+            db,
             zoom_level: 1.0, 
             texture: None 
         }

@@ -3,7 +3,6 @@ use std::os::unix::io::RawFd;
 use tokio::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
-use std::time::Duration;
 use crate::cmd::DaemonCmd;
 
 #[repr(C)]
@@ -286,6 +285,7 @@ pub async fn run_backend(
     mut rx: mpsc::Receiver<DaemonCmd>, 
     shared_frame: Arc<Mutex<Vec<u8>>>,
     shared_focus: Arc<AtomicI32>, // Hardware confirmed state
+    db: Arc<sled::Db>,
     ctx: egui::Context,
 ) {
     let camera = CameraStream::new();
@@ -317,6 +317,7 @@ pub async fn run_backend(
                         }
                     }
                 }
+                DaemonCmd::DeletePhoto(uuid) => println!("[Worker] Ready to delete: {}", uuid),
             }
         }
 

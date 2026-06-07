@@ -10,3 +10,6 @@ eframe = "0.29"
 libc = "0.2.186"
 rand = "0.8"
 tokio = { version = "1.52.3", features = ["full"] }
+sled = "0.34"
+image = "0.24"
+uuid = { version = "1.10", features = ["v4"] }
