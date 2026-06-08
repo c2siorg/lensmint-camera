@@ -281,11 +281,52 @@ pub fn yuyv_to_rgba_in_place(yuyv: &[u8], rgba: &mut [u8], width: usize, height:
 
 use std::sync::atomic::{AtomicI32, Ordering};
 
+// Add process_and_store_image function
+async fn process_and_store_image(
+    uuid: uuid::Uuid, 
+    rgba_data: Vec<u8>, 
+    db: Arc<sled::Db>, 
+    photos_dir: std::path::PathBuf
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Offload CPU-bound image encoding and scaling to blocking thread pool
+    tokio::task::spawn_blocking(move || {
+        let img = image::RgbaImage::from_raw(640, 480, rgba_data)
+            .ok_or("Failed to construct RgbaImage")?;
+
+        // Track 1: Full-res JPEG to Ext4 SD Card
+        let file_path = photos_dir.join(format!("{}.jpg", uuid));
+        img.save_with_format(&file_path, image::ImageFormat::Jpeg)?;
+
+        // Track 2: Downscale thumbnail to Sled Memory-mapped DB
+        // 256x192 maintains 4:3 aspect ratio. Triangle filter balances speed/quality on ARM.
+        let thumbnail = image::imageops::resize(
+            &img, 
+            256, 
+            192, 
+            image::imageops::FilterType::Triangle 
+        );
+
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        thumbnail.write_to(&mut cursor, image::ImageFormat::Jpeg)?;
+        
+        // Sled key: 16-byte UUID. Value: JPEG bytes
+        db.insert(uuid.as_bytes(), cursor.into_inner())?;
+        db.flush()?;
+
+        println!("[Storage] Dual-track save complete: {}", uuid);
+        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+    }).await??;
+
+    Ok(())
+}
+
+// 2. Update run_backend signature and loop logic
 pub async fn run_backend(
     mut rx: mpsc::Receiver<DaemonCmd>, 
     shared_frame: Arc<Mutex<Vec<u8>>>,
-    shared_focus: Arc<AtomicI32>, // Hardware confirmed state
+    shared_focus: Arc<AtomicI32>, 
     db: Arc<sled::Db>,
+    photos_dir: std::path::PathBuf,
     ctx: egui::Context,
 ) {
     let camera = CameraStream::new();
@@ -295,25 +336,20 @@ pub async fn run_backend(
         }
     }
 
-    // pre-allocate 1.2MB buffer once. zero allocations inside the loop.
     let mut local_rgba = vec![255u8; 640 * 480 * 4];
+    let mut pending_capture: Option<uuid::Uuid> = None;
 
     loop {
         if let Ok(cmd) = rx.try_recv() {
             match cmd {
-                DaemonCmd::CapturePhoto => println!("[Worker] Photo saved"),
+                DaemonCmd::CapturePhoto(uuid) => {
+                    pending_capture = Some(uuid);
+                    println!("[Worker] Capture triggered: {}", uuid);
+                },
                 DaemonCmd::SetFocus(val) => {
                     if let Some(cam) = &camera {
-                        match cam.set_focus(val) {
-                            Ok(_) => {
-                                // Hardware accepted, update truth state
-                                shared_focus.store(val, Ordering::Relaxed);
-                                println!("[Hardware] Focus locked to {}", val);
-                            }
-                            Err(e) => {
-                                // e.g., EBUSY. Do NOT update shared_focus.
-                                println!("[Hardware Error] SetFocus failed: {}", e);
-                            }
+                        if cam.set_focus(val).is_ok() {
+                            shared_focus.store(val, Ordering::Relaxed);
                         }
                     }
                 }
@@ -327,7 +363,20 @@ pub async fn run_backend(
                 
                 yuyv_to_rgba_in_place(data_slice, &mut local_rgba, 640, 480, 1280);
                 
-                // fast lock and memcpy
+                // Clone the freshest frame immediately if capture is requested
+                if let Some(uuid) = pending_capture.take() {
+                    let frame_clone = local_rgba.clone();
+                    let db_clone = db.clone();
+                    let dir_clone = photos_dir.clone();
+                    
+                    // Spawn non-blocking task to ensure V4L2 loop stays at 60FPS
+                    tokio::spawn(async move {
+                        if let Err(e) = process_and_store_image(uuid, frame_clone, db_clone, dir_clone).await {
+                            eprintln!("[Storage] Pipeline failed for {}: {}", uuid, e);
+                        }
+                    });
+                }
+
                 if let Ok(mut frame) = shared_frame.lock() {
                     if frame.len() != local_rgba.len() {
                         frame.resize(local_rgba.len(), 255);
@@ -335,7 +384,6 @@ pub async fn run_backend(
                     frame.copy_from_slice(&local_rgba);
                 }
                 
-                // Trigger UI thread repaint
                 ctx.request_repaint();
             } else {
                 tokio::time::sleep(std::time::Duration::from_millis(5)).await;

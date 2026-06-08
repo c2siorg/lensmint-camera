@@ -77,7 +77,12 @@ impl eframe::App for LensMintApp {
             ui.separator();
             
             if ui.button("Capture & Mint (Ed25519)").clicked() {
-                let _ = self.tx.try_send(DaemonCmd::CapturePhoto);
+                let photo_id = uuid::Uuid::new_v4();
+                let _ = self.tx.try_send(DaemonCmd::CapturePhoto(photo_id));
+            }
+
+            if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
         });
     }
