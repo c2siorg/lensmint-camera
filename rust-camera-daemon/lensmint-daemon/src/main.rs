@@ -28,8 +28,12 @@ async fn main() -> Result<(), eframe::Error> {
     let shared_frame = Arc::new(Mutex::new(vec![0; 640 * 480 * 4]));
     let shared_focus = Arc::new(AtomicI32::new(0)); 
 
+    // 4. Configure eframe window parameters for absolute fullscreen Kiosk mode
     let mut options = eframe::NativeOptions::default();
-    options.viewport = egui::ViewportBuilder::default().with_fullscreen(true);
+    options.viewport = egui::ViewportBuilder::default()
+        .with_fullscreen(true)
+        .with_decorations(false) // Strip title bars and borders
+        .with_maximized(true);
     
     eframe::run_native(
         "LensMint OS",
