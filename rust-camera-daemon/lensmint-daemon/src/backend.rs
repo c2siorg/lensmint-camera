@@ -353,7 +353,37 @@ pub async fn run_backend(
                         }
                     }
                 }
-                DaemonCmd::DeletePhoto(uuid) => println!("[Worker] Ready to delete: {}", uuid),
+
+                // update the match arm for DeletePhoto:
+                DaemonCmd::DeletePhoto(uuid) => {
+                    let db_clone = db.clone();
+                    let file_path = photos_dir.join(format!("{}.jpg", uuid));
+                    
+                    // Spawn detached task to prevent blocking the V4L2 60FPS loop
+                    tokio::spawn(async move {
+                        // Future A: Async file system removal
+                        let fs_del = tokio::fs::remove_file(&file_path);
+                        
+                        // Future B: Synchronous sled tree removal wrapped in spawn_blocking
+                        let db_del = tokio::task::spawn_blocking(move || {
+                            let res = db_clone.remove(uuid.as_bytes());
+                            let _ = db_clone.flush();
+                            res
+                        });
+
+                        // Execute parallel cascade deletion
+                        let (fs_res, db_res) = tokio::join!(fs_del, db_del);
+                        
+                        if let Err(e) = fs_res {
+                            eprintln!("[Storage] FS delete error for {}: {}", uuid, e);
+                        }
+                        match db_res {
+                            Ok(Err(e)) => eprintln!("[Storage] DB delete error for {}: {}", uuid, e),
+                            Err(e) => eprintln!("[Storage] DB task panicked: {}", e),
+                            _ => println!("[Storage] Cascade deletion complete: {}", uuid),
+                        }
+                    });
+                }
             }
         }
 

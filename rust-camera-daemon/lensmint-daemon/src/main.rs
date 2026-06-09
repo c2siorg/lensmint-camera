@@ -35,6 +35,8 @@ async fn main() -> Result<(), eframe::Error> {
         .with_decorations(false) // Strip title bars and borders
         .with_maximized(true);
     
+    
+    //update the eframe::run_native block:
     eframe::run_native(
         "LensMint OS",
         options,
@@ -44,14 +46,15 @@ async fn main() -> Result<(), eframe::Error> {
             let focus_clone = shared_focus.clone();
             let db_backend = shared_db.clone();
             let db_app = shared_db.clone();
-            let photos_dir_clone = photos_dir.clone();
+            let photos_dir_backend = photos_dir.clone();
+            let photos_dir_app = photos_dir.clone(); // Clone for frontend
             
             tokio::spawn(async move {
-                // Pass photos_dir to backend
-                backend::run_backend(rx, frame_clone, focus_clone, db_backend, photos_dir_clone, ctx).await;
+                backend::run_backend(rx, frame_clone, focus_clone, db_backend, photos_dir_backend, ctx).await;
             });
 
-            Ok(Box::new(LensMintApp::new(tx, shared_frame, shared_focus, db_app)))
+            // Pass photos_dir_app to LensMintApp::new
+            Ok(Box::new(LensMintApp::new(tx, shared_frame, shared_focus, db_app, photos_dir_app)))
         }),
     )
 }
