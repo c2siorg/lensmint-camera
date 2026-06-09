@@ -32,10 +32,10 @@ async fn main() -> Result<(), eframe::Error> {
     let mut options = eframe::NativeOptions::default();
     options.viewport = egui::ViewportBuilder::default()
         .with_fullscreen(true)
-        .with_decorations(false) // Strip title bars and borders
-        .with_maximized(true);
-    
-    
+        .with_maximized(true)
+        .with_inner_size([800.0, 480.0])
+        .with_decorations(false);
+
     //update the eframe::run_native block:
     eframe::run_native(
         "LensMint OS",
