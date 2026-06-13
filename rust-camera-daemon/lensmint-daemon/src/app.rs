@@ -111,6 +111,13 @@ impl LensMintApp {
     }
 
     fn render_camera(&mut self, ctx: &egui::Context) {
+        // [NEW] Capture multi-touch pinch-to-zoom gesture
+        let zoom_delta = ctx.input(|i| i.zoom_delta());
+        if zoom_delta != 1.0 {
+            // Multiply the delta and clamp strictly between 1.0x and 3.0x
+            self.zoom_level = (self.zoom_level * zoom_delta).clamp(1.0, 3.0);
+        }
+        
         let frame = egui::Frame::none().fill(egui::Color32::BLACK).inner_margin(0.0);
         
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
