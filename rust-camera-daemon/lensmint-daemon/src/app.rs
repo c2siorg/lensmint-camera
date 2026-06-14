@@ -64,7 +64,9 @@ impl LensMintApp {
                     .flatten()
                     .filter_map(|entry| {
                         let path = entry.path();
-                        if path.extension().and_then(|e| e.to_str()) != Some("jpg") { return None; }
+                        // both jpg and mp4
+                        let ext = path.extension().and_then(|e| e.to_str())?;
+                        if ext != "jpg" && ext != "mp4" { return None; }
                         let modified_time = entry.metadata().ok()?.modified().ok()?;
                         Some((path, modified_time))
                     })
@@ -80,17 +82,23 @@ impl LensMintApp {
                             let img_bytes = match db.get(uuid.as_bytes()) {
                                 Ok(Some(bytes)) => bytes.to_vec(),
                                 _ => {
-                                    if let Ok(raw) = image::open(&path) {
-                                        // Fast 4:3 downsample via Triangle filter
-                                        let thumb = image::imageops::resize(&raw, 256, 192, image::imageops::FilterType::Triangle);
-                                        let mut buf = std::io::Cursor::new(Vec::new());
-                                        if thumb.write_to(&mut buf, image::ImageFormat::Jpeg).is_ok() {
-                                            let bytes = buf.into_inner();
-                                            let _ = db.insert(uuid.as_bytes(), bytes.clone());
-                                            let _ = db.flush();
-                                            bytes
+                                    // Skip image decoder for mp4 if cache missed
+                                    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+                                    if ext == "jpg" {
+                                        if let Ok(raw) = image::open(&path) {
+                                            // Fast 4:3 downsample via Triangle filter
+                                            let thumb = image::imageops::resize(&raw, 256, 192, image::imageops::FilterType::Triangle);
+                                            let mut buf = std::io::Cursor::new(Vec::new());
+                                            if thumb.write_to(&mut buf, image::ImageFormat::Jpeg).is_ok() {
+                                                let bytes = buf.into_inner();
+                                                let _ = db.insert(uuid.as_bytes(), bytes.clone());
+                                                let _ = db.flush();
+                                                bytes
+                                            } else { continue; }
                                         } else { continue; }
-                                    } else { continue; }
+                                    } else {
+                                        continue;
+                                    }
                                 }
                             };
 
