@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
 use crate::cmd::DaemonCmd;
+use std::sync::atomic::{AtomicI32, Ordering};
 
 #[repr(C)]
 pub struct v4l2_pix_format {
@@ -59,30 +60,6 @@ pub struct v4l2_buffer {
     _pad3: u32,
 }
 
-// #[repr(C, packed)]
-// pub struct v4l2_ext_control {
-//     pub id: u32,
-//     pub size: u32,
-//     pub reserved2: [u32; 1],
-//     pub value: i32,
-//     pub _padding: u32,
-// }
-
-// #[repr(C)]
-// pub struct v4l2_ext_controls {
-//     pub ctrl_class: u32,
-//     pub count: u32,
-//     pub error_idx: u32,
-//     pub request_fd: i32,
-//     pub reserved: [u32; 1],
-//     pub _pad0: u32, // CRITICAL: 4-byte padding for 64-bit pointer alignment
-//     pub controls: *mut v4l2_ext_control,
-// }
-
-// const VIDIOC_S_EXT_CTRLS: libc::c_ulong = 0xc0205648;
-// const V4L2_CTRL_CLASS_CAMERA: u32 = 0x009a0000;
-// const V4L2_CID_FOCUS_ABSOLUTE: u32 = V4L2_CTRL_CLASS_CAMERA | 0x000a;
-
 #[repr(C)]
 pub struct v4l2_control {
     pub id: u32,
@@ -92,7 +69,6 @@ pub struct v4l2_control {
 const VIDIOC_S_CTRL: libc::c_ulong = 0xc008561c;
 const V4L2_CTRL_CLASS_CAMERA: u32 = 0x009a0000;
 const V4L2_CID_FOCUS_ABSOLUTE: u32 = V4L2_CTRL_CLASS_CAMERA | 0x000a;
-
 
 const VIDIOC_S_FMT: libc::c_ulong = 0xc0d05605;
 const VIDIOC_REQBUFS: libc::c_ulong = 0xc0145608;
@@ -185,34 +161,6 @@ impl CameraStream {
         }
     }
 
-    // pub fn set_focus(&self, value: i32) -> Result<(), std::io::Error> {
-    //     let mut ctrl = v4l2_ext_control {
-    //         id: V4L2_CID_FOCUS_ABSOLUTE,
-    //         size: 0,
-    //         reserved2: [0; 1],
-    //         value,
-    //         _padding: 0,
-    //     };
-
-    //     let mut ctrls = v4l2_ext_controls {
-    //         ctrl_class: V4L2_CTRL_CLASS_CAMERA,
-    //         count: 1,
-    //         error_idx: 0,
-    //         request_fd: 0,
-    //         reserved: [0; 1],
-    //         _pad0: 0,
-    //         controls: &mut ctrl,
-    //     };
-
-    //     unsafe {
-    //         let res = libc::ioctl(self.fd, VIDIOC_S_EXT_CTRLS, &mut ctrls);
-    //         if res < 0 {
-    //             return Err(std::io::Error::last_os_error());
-    //         }
-    //     }
-    //     Ok(())
-    // }
-
     pub fn set_focus(&self, value: i32) -> Result<(), std::io::Error> {
         let mut ctrl = v4l2_control {
             id: V4L2_CID_FOCUS_ABSOLUTE,
@@ -242,14 +190,14 @@ impl Drop for CameraStream {
     }
 }
 
-// in-place yuyv parsing. eliminates vec allocation in hot loop.
+// In-place YUYV parsing. Eliminates vec allocation in hot loop.
 pub fn yuyv_to_rgba_in_place(yuyv: &[u8], rgba: &mut [u8], width: usize, height: usize, stride: usize) {
     for y in 0..height {
         let row_start = y * stride;
         
         for x in (0..width).step_by(2) {
             let i = row_start + x * 2;
-            // bounds check to prevent panic during hardware tearing
+            // Bounds check to prevent panic during hardware tearing
             if i + 3 >= yuyv.len() { break; }
 
             let y0 = yuyv[i] as i32;
@@ -257,20 +205,20 @@ pub fn yuyv_to_rgba_in_place(yuyv: &[u8], rgba: &mut [u8], width: usize, height:
             let y1 = yuyv[i + 2] as i32;
             let v  = yuyv[i + 3] as i32 - 128;
 
-            // fixed-point math for ARM. much faster than floats.
+            // Fixed-point math for ARM. Much faster than floats.
             let r_add = (104597 * v) >> 16;
             let g_sub = (25675 * u + 53279 * v) >> 16;
             let b_add = (132201 * u) >> 16;
 
             let out_idx = (y * width + x) * 4;
 
-            // pixel 0
+            // Pixel 0
             rgba[out_idx]     = (y0 + r_add).clamp(0, 255) as u8;
             rgba[out_idx + 1] = (y0 - g_sub).clamp(0, 255) as u8;
             rgba[out_idx + 2] = (y0 + b_add).clamp(0, 255) as u8;
             rgba[out_idx + 3] = 255; 
             
-            // pixel 1
+            // Pixel 1
             rgba[out_idx + 4] = (y1 + r_add).clamp(0, 255) as u8;
             rgba[out_idx + 5] = (y1 - g_sub).clamp(0, 255) as u8;
             rgba[out_idx + 6] = (y1 + b_add).clamp(0, 255) as u8;
@@ -279,9 +227,6 @@ pub fn yuyv_to_rgba_in_place(yuyv: &[u8], rgba: &mut [u8], width: usize, height:
     }
 }
 
-use std::sync::atomic::{AtomicI32, Ordering};
-
-// Add process_and_store_image function
 async fn process_and_store_image(
     uuid: uuid::Uuid, 
     rgba_data: Vec<u8>, 
@@ -320,7 +265,6 @@ async fn process_and_store_image(
     Ok(())
 }
 
-// 2. Update run_backend signature and loop logic
 pub async fn run_backend(
     mut rx: mpsc::Receiver<DaemonCmd>, 
     shared_frame: Arc<Mutex<Vec<u8>>>,
@@ -339,6 +283,11 @@ pub async fn run_backend(
     let mut local_rgba = vec![255u8; 640 * 480 * 4];
     let mut pending_capture: Option<uuid::Uuid> = None;
 
+    // Video recording state management
+    let mut video_tx: Option<tokio::sync::mpsc::Sender<Vec<u8>>> = None;
+    let mut child_process: Option<tokio::process::Child> = None;
+    let mut current_video_uuid: Option<uuid::Uuid> = None;
+
     loop {
         if let Ok(cmd) = rx.try_recv() {
             match cmd {
@@ -352,37 +301,111 @@ pub async fn run_backend(
                             shared_focus.store(val, Ordering::Relaxed);
                         }
                     }
-                }
-
-                // update the match arm for DeletePhoto:
+                },
                 DaemonCmd::DeletePhoto(uuid) => {
                     let db_clone = db.clone();
-                    let file_path = photos_dir.join(format!("{}.jpg", uuid));
+                    // Attempt cascade deletion for both formats
+                    let file_path_jpg = photos_dir.join(format!("{}.jpg", uuid));
+                    let file_path_mp4 = photos_dir.join(format!("{}.mp4", uuid));
                     
-                    // Spawn detached task to prevent blocking the V4L2 60FPS loop
                     tokio::spawn(async move {
-                        // Future A: Async file system removal
-                        let fs_del = tokio::fs::remove_file(&file_path);
+                        let _ = tokio::fs::remove_file(&file_path_jpg).await;
+                        let _ = tokio::fs::remove_file(&file_path_mp4).await;
                         
-                        // Future B: Synchronous sled tree removal wrapped in spawn_blocking
                         let db_del = tokio::task::spawn_blocking(move || {
                             let res = db_clone.remove(uuid.as_bytes());
                             let _ = db_clone.flush();
                             res
                         });
 
-                        // Execute parallel cascade deletion
-                        let (fs_res, db_res) = tokio::join!(fs_del, db_del);
-                        
-                        if let Err(e) = fs_res {
-                            eprintln!("[Storage] FS delete error for {}: {}", uuid, e);
-                        }
-                        match db_res {
-                            Ok(Err(e)) => eprintln!("[Storage] DB delete error for {}: {}", uuid, e),
-                            Err(e) => eprintln!("[Storage] DB task panicked: {}", e),
-                            _ => println!("[Storage] Cascade deletion complete: {}", uuid),
+                        if let Ok(Err(e)) = db_del.await {
+                            eprintln!("[Storage] DB delete error for {}: {}", uuid, e);
+                        } else {
+                            println!("[Storage] Cascade deletion complete: {}", uuid);
                         }
                     });
+                },
+                DaemonCmd::StartVideo(uuid) => {
+                    let file_path = photos_dir.join(format!("{}.mp4", uuid));
+                    let child_res = tokio::process::Command::new("ffmpeg")
+                        .args(&[
+                            "-y",
+                            "-f", "rawvideo",
+                            "-pix_fmt", "yuyv422",
+                            "-s", "640x480",
+                            "-framerate", "30",
+                            "-i", "pipe:0",       // Read raw frames from stdin
+                            "-c:v", "libx264",    // Standard H264 software encoder
+                            "-preset", "ultrafast",
+                            "-crf", "28",
+                            file_path.to_str().unwrap(),
+                        ])
+                        .stdin(std::process::Stdio::piped())
+                        .stdout(std::process::Stdio::null())
+                        .stderr(std::process::Stdio::null())
+                        .spawn();
+
+                    if let Ok(mut child) = child_res {
+                        let mut stdin = child.stdin.take().expect("Failed to open stdin");
+                        // 30-frame buffer channel to prevent V4L2 pipeline stall
+                        let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(30);
+                        video_tx = Some(tx);
+                        child_process = Some(child);
+                        current_video_uuid = Some(uuid);
+
+                        // Dedicated async frame consumer loop
+                        tokio::spawn(async move {
+                            use tokio::io::AsyncWriteExt;
+                            while let Some(frame) = rx.recv().await {
+                                if stdin.write_all(&frame).await.is_err() { break; }
+                            }
+                            // stdin drops here on channel close, sending EOF to ffmpeg
+                        });
+                        println!("[Hardware] Started video recording: {}", uuid);
+                    }
+                },
+                DaemonCmd::StopVideo => {
+                    video_tx = None; // Terminate channel to trigger EOF on pipeline writer
+                    
+                    if let Some(mut child) = child_process.take() {
+                        if let Some(uuid) = current_video_uuid.take() {
+                            let dir_clone = photos_dir.clone();
+                            let db_clone = db.clone();
+                            
+                            // Wait for muxing to finish and generate thumbnail
+                            tokio::spawn(async move {
+                                let _ = child.wait().await;
+                                println!("[Hardware] Video recording finalized: {}", uuid);
+                                
+                                let video_path = dir_clone.join(format!("{}.mp4", uuid));
+                                // Extract first frame as gallery thumbnail
+                                let thumb_output = tokio::process::Command::new("ffmpeg")
+                                    .args(&[
+                                        "-i", video_path.to_str().unwrap(),
+                                        "-vframes", "1",
+                                        "-f", "image2pipe",
+                                        "-vcodec", "mjpeg",
+                                        "-"
+                                    ])
+                                    .output()
+                                    .await;
+
+                                if let Ok(output) = thumb_output {
+                                    if output.status.success() {
+                                        if let Ok(img) = image::load_from_memory(&output.stdout) {
+                                            let thumbnail = image::imageops::resize(&img, 256, 192, image::imageops::FilterType::Triangle);
+                                            let mut cursor = std::io::Cursor::new(Vec::new());
+                                            if thumbnail.write_to(&mut cursor, image::ImageFormat::Jpeg).is_ok() {
+                                                let _ = db_clone.insert(uuid.as_bytes(), cursor.into_inner());
+                                                let _ = db_clone.flush();
+                                                println!("[Storage] Video thumbnail generated and saved: {}", uuid);
+                                            }
+                                        }
+                                    }
+                                }
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -391,15 +414,18 @@ pub async fn run_backend(
             if cam.grab_frame() {
                 let data_slice = unsafe { std::slice::from_raw_parts(cam.mem_ptr as *const u8, cam.mem_len) };
                 
+                // Stream raw frames to ffmpeg pipeline if recording is active
+                if let Some(tx) = &video_tx {
+                    let _ = tx.try_send(data_slice.to_vec());
+                }
+                
                 yuyv_to_rgba_in_place(data_slice, &mut local_rgba, 640, 480, 1280);
                 
-                // Clone the freshest frame immediately if capture is requested
                 if let Some(uuid) = pending_capture.take() {
                     let frame_clone = local_rgba.clone();
                     let db_clone = db.clone();
                     let dir_clone = photos_dir.clone();
                     
-                    // Spawn non-blocking task to ensure V4L2 loop stays at 60FPS
                     tokio::spawn(async move {
                         if let Err(e) = process_and_store_image(uuid, frame_clone, db_clone, dir_clone).await {
                             eprintln!("[Storage] Pipeline failed for {}: {}", uuid, e);

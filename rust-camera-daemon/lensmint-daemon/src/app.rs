@@ -117,7 +117,7 @@ impl LensMintApp {
             // Multiply the delta and clamp strictly between 1.0x and 3.0x
             self.zoom_level = (self.zoom_level * zoom_delta).clamp(1.0, 3.0);
         }
-        
+
         let frame = egui::Frame::none().fill(egui::Color32::BLACK).inner_margin(0.0);
         
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
@@ -208,9 +208,16 @@ impl LensMintApp {
                         .fill(video_color)
                         .min_size(egui::vec2(block_w, block_h))
                         .rounding(0.0);
+                        
                     if ui.add(btn_video).clicked() {
+                        if self.is_recording {
+                            let _ = self.tx.try_send(DaemonCmd::StopVideo);
+                        } else {
+                            let _ = self.tx.try_send(DaemonCmd::StartVideo(uuid::Uuid::new_v4()));
+                        }
                         self.is_recording = !self.is_recording;
                     }
+
 
                     // 3. ZOOM
                     ui.vertical(|ui| {
