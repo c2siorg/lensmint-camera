@@ -5,6 +5,7 @@ use std::sync::{Arc, Mutex};
 use eframe::egui;
 use crate::cmd::DaemonCmd;
 use std::sync::atomic::{AtomicI32, Ordering};
+use sha2::{Sha256, Digest};
 
 #[repr(C)]
 pub struct v4l2_pix_format {
@@ -212,13 +213,11 @@ pub fn yuyv_to_rgba_in_place(yuyv: &[u8], rgba: &mut [u8], width: usize, height:
 
             let out_idx = (y * width + x) * 4;
 
-            // Pixel 0
             rgba[out_idx]     = (y0 + r_add).clamp(0, 255) as u8;
             rgba[out_idx + 1] = (y0 - g_sub).clamp(0, 255) as u8;
             rgba[out_idx + 2] = (y0 + b_add).clamp(0, 255) as u8;
             rgba[out_idx + 3] = 255; 
             
-            // Pixel 1
             rgba[out_idx + 4] = (y1 + r_add).clamp(0, 255) as u8;
             rgba[out_idx + 5] = (y1 - g_sub).clamp(0, 255) as u8;
             rgba[out_idx + 6] = (y1 + b_add).clamp(0, 255) as u8;
@@ -263,6 +262,41 @@ async fn process_and_store_image(
     }).await??;
 
     Ok(())
+}
+
+pub struct ImageHashes {
+    pub sha256: String,
+    pub phash: String,
+}
+
+// Compute hashes in blocking pool to prevent UI/V4L2 stall
+pub async fn compute_image_hashes(
+    db: Arc<sled::Db>,
+    uuid: uuid::Uuid,
+) -> Result<ImageHashes, Box<dyn std::error::Error + Send + Sync>> {
+    tokio::task::spawn_blocking(move || {
+        // read raw jpeg bytes directly from sled
+        let img_bytes = db.get(uuid.as_bytes())?
+            .ok_or("missing image in sled cache")?;
+
+        let mut sha256_hasher = Sha256::new();
+        sha256_hasher.update(&img_bytes);
+        let sha256_hex = hex::encode(sha256_hasher.finalize());
+
+        let img = image::load_from_memory(&img_bytes)?;
+        let p_hasher = image_hasher::HasherConfig::new()
+            .hash_alg(image_hasher::HashAlg::Gradient)
+            .to_hasher();
+            
+        let phash = p_hasher.hash_image(&img);
+        let phash_hex = hex::encode(phash.as_bytes());
+
+        Ok(ImageHashes {
+            sha256: sha256_hex,
+            phash: phash_hex,
+        })
+    })
+    .await?
 }
 
 pub async fn run_backend(
@@ -427,8 +461,14 @@ pub async fn run_backend(
                     let dir_clone = photos_dir.clone();
                     
                     tokio::spawn(async move {
-                        if let Err(e) = process_and_store_image(uuid, frame_clone, db_clone, dir_clone).await {
+                        if let Err(e) = process_and_store_image(uuid, frame_clone, db_clone.clone(), dir_clone).await {
                             eprintln!("[Storage] Pipeline failed for {}: {}", uuid, e);
+                        } else {
+                            // Issue 10: compute hashes from cached thumbnail
+                            match compute_image_hashes(db_clone, uuid).await {
+                                Ok(hashes) => println!("[Core] SHA256: {} | pHash: {}", hashes.sha256, hashes.phash),
+                                Err(e) => eprintln!("[Core] Hash computation failed: {}", e),
+                            }
                         }
                     });
                 }
