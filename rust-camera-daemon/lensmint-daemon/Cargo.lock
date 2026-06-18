@@ -1980,6 +1980,8 @@ dependencies = [
  "image_hasher",
  "libc",
  "rand",
+ "serde",
+ "serde_json",
  "sha2",
  "sled",
  "tokio",

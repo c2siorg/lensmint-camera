@@ -11,10 +11,12 @@ pub struct LocalKeystore {
 }
 
 impl LocalKeystore {
-    /// Loads the Ed25519 Keypair from the standard config directory (e.g. `~/.local/share/lensmint/keystore.pem`).
-    /// Generates a new identity if it doesn't exist and enforces 0400 Unix file locks.
+    /// Loads the Ed25519 keypair from the platform's standard data directory 
+    /// (e.g., `~/.local/share/lensmint/keystore.pem` on Unix).
+    ///
+    /// If no identity exists, a new cryptographic pair is generated and securely 
+    /// stored with strict Unix file permissions (0400).
     pub fn load_or_generate() -> Result<Self, Box<dyn std::error::Error>> {
-        // Use directory struct leveraging XDG standards
         let proj_dirs = directories::ProjectDirs::from("", "", "lensmint")
             .ok_or("Could not resolve local App directories")?;
             
@@ -33,11 +35,8 @@ impl LocalKeystore {
         } else {
             let mut csprng = OsRng;
             let signing_key = SigningKey::generate(&mut csprng);
-
-            // Encode to PEM Format
             let pem_str = signing_key.to_pkcs8_pem(Default::default())?;
 
-            // File FD creation specifically utilizing exclusive write locking.
             let mut file = OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -45,9 +44,8 @@ impl LocalKeystore {
 
             #[cfg(unix)]
             {
-                // Enforce POSIX mask locking
                 let mut perms = file.metadata()?.permissions();
-                perms.set_mode(0o400); // 0400: strict read-only for current owner 
+                perms.set_mode(0o400); 
                 file.set_permissions(perms)?;
             }
 
@@ -57,15 +55,23 @@ impl LocalKeystore {
         }
     }
 
-    /// Sign off-chain event data before network transit
+    /// Signs raw off-chain payload data using the local identity key.
     pub fn sign_payload(&self, payload: &[u8]) -> Signature {
         self.signing_key.sign(payload)
     }
+
+    /// Returns the public key encoded as a hex string for Web3 JSON compatibility.
+    pub fn public_key_hex(&self) -> String {
+        hex::encode(self.signing_key.verifying_key().as_bytes())
+    }
+
+    /// Signs the payload and returns the resulting signature encoded as a hex string.
+    pub fn sign_payload_hex(&self, payload: &[u8]) -> String {
+        let sig = self.sign_payload(payload);
+        hex::encode(sig.to_bytes())
+    }
 }
 
-// =====================================
-// TDD: Unit Tests Lifecycle 
-// =====================================
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -79,10 +85,9 @@ mod tests {
             signing_key: signing_key.clone(),
         };
 
-        let mock_hash = b"0x21a4f00d23..."; // Hypothetical perceptual hashing payload
+        let mock_hash = b"0x21a4f00d23..."; 
         let signature = keystore.sign_payload(mock_hash);
 
-        // A valid validating node public key MUST pass
         let verifying_key = signing_key.verifying_key();
         assert!(
             verifying_key.verify(mock_hash, &signature).is_ok(),
@@ -100,7 +105,6 @@ mod tests {
         
         let signature = keystore.sign_payload(b"Valid Data");
         
-        // Mock a hacker forged or different camera node verifying key
         let hacker_key = SigningKey::generate(&mut csprng);
         let hacker_pub = hacker_key.verifying_key();
         

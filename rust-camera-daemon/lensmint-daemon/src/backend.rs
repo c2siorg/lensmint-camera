@@ -6,6 +6,8 @@ use eframe::egui;
 use crate::cmd::DaemonCmd;
 use std::sync::atomic::{AtomicI32, Ordering};
 use sha2::{Sha256, Digest};
+use serde::Serialize;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[repr(C)]
 pub struct v4l2_pix_format {
@@ -299,6 +301,23 @@ pub async fn compute_image_hashes(
     .await?
 }
 
+// Metadata envelope for Web3 attestation layout
+#[derive(Serialize)]
+pub struct MetadataPayload {
+    pub uuid: String,
+    pub sha256: String,
+    pub phash: String,
+    pub pubkey: String,
+    pub timestamp: u64,
+    pub chain: String,
+}
+
+#[derive(Serialize)]
+pub struct SignedEnvelope {
+    pub payload_json: String,
+    pub signature: String,
+}
+
 pub async fn run_backend(
     mut rx: mpsc::Receiver<DaemonCmd>, 
     shared_frame: Arc<Mutex<Vec<u8>>>,
@@ -306,6 +325,7 @@ pub async fn run_backend(
     db: Arc<sled::Db>,
     photos_dir: std::path::PathBuf,
     ctx: egui::Context,
+    keystore: Arc<crate::keystore::LocalKeystore>, 
 ) {
     let camera = CameraStream::new();
     if let Some(cam) = &camera {
@@ -459,14 +479,34 @@ pub async fn run_backend(
                     let frame_clone = local_rgba.clone();
                     let db_clone = db.clone();
                     let dir_clone = photos_dir.clone();
+                    let key_clone = keystore.clone();
                     
                     tokio::spawn(async move {
                         if let Err(e) = process_and_store_image(uuid, frame_clone, db_clone.clone(), dir_clone).await {
                             eprintln!("[Storage] Pipeline failed for {}: {}", uuid, e);
                         } else {
-                            // Issue 10: compute hashes from cached thumbnail
+                            // Construct and sign Web3 payload about issue 11
                             match compute_image_hashes(db_clone, uuid).await {
-                                Ok(hashes) => println!("[Core] SHA256: {} | pHash: {}", hashes.sha256, hashes.phash),
+                                Ok(hashes) => {
+                                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                                    let payload = MetadataPayload {
+                                        uuid: uuid.to_string(),
+                                        sha256: hashes.sha256,
+                                        phash: hashes.phash,
+                                        pubkey: key_clone.public_key_hex(),
+                                        timestamp: ts,
+                                        chain: "evm/solana".to_string(), 
+                                    };
+
+                                    if let Ok(json_str) = serde_json::to_string(&payload) {
+                                        let sig = key_clone.sign_payload_hex(json_str.as_bytes());
+                                        let envelope = SignedEnvelope {
+                                            payload_json: json_str,
+                                            signature: sig,
+                                        };
+                                        println!("[Web3] Envelope signed | Sig: {}...", &envelope.signature[..16]);
+                                    }
+                                },
                                 Err(e) => eprintln!("[Core] Hash computation failed: {}", e),
                             }
                         }

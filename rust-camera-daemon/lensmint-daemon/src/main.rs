@@ -25,6 +25,11 @@ async fn main() -> Result<(), eframe::Error> {
     let db = sled::open(cache_dir).expect("Failed to open Sled database");
     let shared_db = Arc::new(db);
 
+    // Initialize Ed25519 local hardware keystore
+    let keystore = crate::keystore::LocalKeystore::load_or_generate()
+        .expect("Failed to initialize Ed25519 Keystore");
+    let shared_keystore = Arc::new(keystore);
+
     let shared_frame = Arc::new(Mutex::new(vec![0; 640 * 480 * 4]));
     let shared_focus = Arc::new(AtomicI32::new(0)); 
 
@@ -36,7 +41,6 @@ async fn main() -> Result<(), eframe::Error> {
         .with_inner_size([800.0, 480.0])
         .with_decorations(false);
 
-    //update the eframe::run_native block:
     eframe::run_native(
         "LensMint OS",
         options,
@@ -47,13 +51,23 @@ async fn main() -> Result<(), eframe::Error> {
             let db_backend = shared_db.clone();
             let db_app = shared_db.clone();
             let photos_dir_backend = photos_dir.clone();
-            let photos_dir_app = photos_dir.clone(); // Clone for frontend
+            let photos_dir_app = photos_dir.clone();
+            
+            // Clone keystore Arc for the backend async worker loop
+            let keystore_backend = shared_keystore.clone();
             
             tokio::spawn(async move {
-                backend::run_backend(rx, frame_clone, focus_clone, db_backend, photos_dir_backend, ctx).await;
+                backend::run_backend(
+                    rx, 
+                    frame_clone, 
+                    focus_clone, 
+                    db_backend, 
+                    photos_dir_backend, 
+                    ctx,
+                    keystore_backend
+                ).await;
             });
 
-            // Pass photos_dir_app to LensMintApp::new
             Ok(Box::new(LensMintApp::new(tx, shared_frame, shared_focus, db_app, photos_dir_app)))
         }),
     )
