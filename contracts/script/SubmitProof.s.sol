@@ -6,8 +6,7 @@ import {LensMintVerifier} from "../src/LensMintVerifier.sol";
 
 contract SubmitProofScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
         
         address verifierAddress = vm.envAddress("VERIFIER_CONTRACT_ADDRESS");
         string memory proofFilePath = vm.envString("PROOF_FILE");
@@ -19,7 +18,7 @@ contract SubmitProofScript is Script {
         
         string memory proofJson = vm.readFile(proofFilePath);
         
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         
         LensMintVerifier verifier = LensMintVerifier(verifierAddress);
         

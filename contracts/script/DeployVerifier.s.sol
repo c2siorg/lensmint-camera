@@ -7,10 +7,10 @@ import {RiscZeroMockVerifier} from "risc0-risc0-ethereum-3.0.0/test/RiscZeroMock
 
 contract DeployVerifierScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        // Automatically detected by Forge via --account or --sender
+        address deployer = msg.sender;
         
-        string memory network = vm.envString("NETWORK");
+        string memory network = vm.envOr("NETWORK", string("unknown"));
         address riscZeroVerifierAddress = vm.envOr("RISC_ZERO_VERIFIER_ADDRESS", address(0));
         
         bytes32 imageId = vm.envBytes32("ZK_PROVER_GUEST_ID");
@@ -28,7 +28,7 @@ contract DeployVerifierScript is Script {
         console.log("Expected URL:", expectedUrl);
         console.log("");
         
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         
         address verifierAddress;
         if (riscZeroVerifierAddress != address(0)) {

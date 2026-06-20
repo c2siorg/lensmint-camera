@@ -7,10 +7,9 @@ import {LensMintERC1155} from "../src/LensMintERC1155.sol";
 
 contract DeployAndVerifyScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
         
-        string memory network = vm.envString("NETWORK");
+        string memory network = vm.envOr("NETWORK", string("unknown"));
         string memory baseURI = vm.envOr("BASE_URI", string("https://ipfs.io/ipfs/"));
         
         console.log("=== Deployment Configuration ===");
@@ -20,7 +19,7 @@ contract DeployAndVerifyScript is Script {
         console.log("Base URI:", baseURI);
         console.log("");
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         console.log("Deploying DeviceRegistry...");
         DeviceRegistry deviceRegistry = new DeviceRegistry();

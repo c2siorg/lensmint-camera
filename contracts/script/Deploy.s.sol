@@ -7,22 +7,21 @@ import {LensMintERC1155} from "../src/LensMintERC1155.sol";
 
 contract DeployScript is Script {
     function run() external {
-        // Load deployer private key from environment
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        // Automatically detected by Forge via --account or --sender
+        address deployer = msg.sender;
         
         console.log("Deploying contracts...");
         console.log("Deployer address:", deployer);
         console.log("Deployer balance:", deployer.balance);
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         console.log("\nDeploying DeviceRegistry...");
         DeviceRegistry deviceRegistry = new DeviceRegistry();
         console.log("DeviceRegistry deployed at:", address(deviceRegistry));
 
         console.log("\nDeploying LensMintERC1155...");
-        string memory baseURI = "https://ipfs.io/ipfs/";
+        string memory baseURI = vm.envOr("BASE_URI", string("https://ipfs.io/ipfs/"));
         LensMintERC1155 lensMint = new LensMintERC1155(
             address(deviceRegistry),
             baseURI

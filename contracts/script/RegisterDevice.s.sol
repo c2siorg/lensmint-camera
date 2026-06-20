@@ -6,8 +6,7 @@ import {DeviceRegistry} from "../src/DeviceRegistry.sol";
 
 contract RegisterDeviceScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
         
         address deviceRegistryAddress = vm.envAddress("DEVICE_REGISTRY_ADDRESS");
         DeviceRegistry deviceRegistry = DeviceRegistry(deviceRegistryAddress);
@@ -25,7 +24,7 @@ contract RegisterDeviceScript is Script {
         console.log("Camera ID:", cameraId);
         console.log("Model:", model);
 
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
 
         deviceRegistry.registerDevice(
             deviceAddress,

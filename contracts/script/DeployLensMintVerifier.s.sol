@@ -7,14 +7,13 @@ import {RiscZeroMockVerifier} from "risc0-risc0-ethereum-3.0.0/test/RiscZeroMock
 
 contract DeployLensMintVerifierScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployerPrivateKey);
+        address deployer = msg.sender;
         
         console.log("=== Deploying LensMintVerifier ===");
         console.log("Deployer:", deployer);
         console.log("Balance:", deployer.balance);
         
-        vm.startBroadcast(deployerPrivateKey);
+        vm.startBroadcast();
         
         console.log("\nDeploying RiscZeroMockVerifier...");
         RiscZeroMockVerifier mockVerifier = new RiscZeroMockVerifier(0xFFFFFFFF);
