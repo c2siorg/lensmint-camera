@@ -3,7 +3,7 @@ use std::os::unix::io::RawFd;
 use tokio::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use eframe::egui;
-use crate::cmd::DaemonCmd;
+use crate::cmd::{DaemonCmd, AppEvent, ChainTarget};
 use std::sync::atomic::{AtomicI32, Ordering};
 use sha2::{Sha256, Digest};
 use serde::Serialize;
@@ -28,7 +28,7 @@ pub struct v4l2_pix_format {
 #[repr(C)]
 pub struct v4l2_format {
     pub type_: u32,
-    pub _pad0: u32, // Critical: 64-bit ABI alignment padding for AArch64
+    pub _pad0: u32, 
     pub fmt: v4l2_pix_format,
     pub padding: [u8; 152],
 }
@@ -165,6 +165,7 @@ impl CameraStream {
     }
 
     pub fn set_focus(&self, value: i32) -> Result<(), std::io::Error> {
+        #[allow(unused_mut)]
         let mut ctrl = v4l2_control {
             id: V4L2_CID_FOCUS_ABSOLUTE,
             value,
@@ -193,14 +194,12 @@ impl Drop for CameraStream {
     }
 }
 
-// In-place YUYV parsing. Eliminates vec allocation in hot loop.
 pub fn yuyv_to_rgba_in_place(yuyv: &[u8], rgba: &mut [u8], width: usize, height: usize, stride: usize) {
     for y in 0..height {
         let row_start = y * stride;
         
         for x in (0..width).step_by(2) {
             let i = row_start + x * 2;
-            // Bounds check to prevent panic during hardware tearing
             if i + 3 >= yuyv.len() { break; }
 
             let y0 = yuyv[i] as i32;
@@ -208,7 +207,6 @@ pub fn yuyv_to_rgba_in_place(yuyv: &[u8], rgba: &mut [u8], width: usize, height:
             let y1 = yuyv[i + 2] as i32;
             let v  = yuyv[i + 3] as i32 - 128;
 
-            // Fixed-point math for ARM. Much faster than floats.
             let r_add = (104597 * v) >> 16;
             let g_sub = (25675 * u + 53279 * v) >> 16;
             let b_add = (132201 * u) >> 16;
@@ -234,17 +232,13 @@ async fn process_and_store_image(
     db: Arc<sled::Db>, 
     photos_dir: std::path::PathBuf
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    // Offload CPU-bound image encoding and scaling to blocking thread pool
     tokio::task::spawn_blocking(move || {
         let img = image::RgbaImage::from_raw(640, 480, rgba_data)
             .ok_or("Failed to construct RgbaImage")?;
 
-        // Track 1: Full-res JPEG to Ext4 SD Card
         let file_path = photos_dir.join(format!("{}.jpg", uuid));
         img.save_with_format(&file_path, image::ImageFormat::Jpeg)?;
 
-        // Track 2: Downscale thumbnail to Sled Memory-mapped DB
-        // 256x192 maintains 4:3 aspect ratio. Triangle filter balances speed/quality on ARM.
         let thumbnail = image::imageops::resize(
             &img, 
             256, 
@@ -255,7 +249,6 @@ async fn process_and_store_image(
         let mut cursor = std::io::Cursor::new(Vec::new());
         thumbnail.write_to(&mut cursor, image::ImageFormat::Jpeg)?;
         
-        // Sled key: 16-byte UUID. Value: JPEG bytes
         db.insert(uuid.as_bytes(), cursor.into_inner())?;
         db.flush()?;
 
@@ -271,13 +264,11 @@ pub struct ImageHashes {
     pub phash: String,
 }
 
-// Compute hashes in blocking pool to prevent UI/V4L2 stall
 pub async fn compute_image_hashes(
     db: Arc<sled::Db>,
     uuid: uuid::Uuid,
 ) -> Result<ImageHashes, Box<dyn std::error::Error + Send + Sync>> {
     tokio::task::spawn_blocking(move || {
-        // read raw jpeg bytes directly from sled
         let img_bytes = db.get(uuid.as_bytes())?
             .ok_or("missing image in sled cache")?;
 
@@ -301,7 +292,6 @@ pub async fn compute_image_hashes(
     .await?
 }
 
-// Metadata envelope for Web3 attestation layout
 #[derive(Serialize)]
 pub struct MetadataPayload {
     pub uuid: String,
@@ -326,6 +316,7 @@ pub async fn run_backend(
     photos_dir: std::path::PathBuf,
     ctx: egui::Context,
     keystore: Arc<crate::keystore::LocalKeystore>, 
+    event_tx: std::sync::mpsc::Sender<AppEvent>, 
 ) {
     let camera = CameraStream::new();
     if let Some(cam) = &camera {
@@ -334,10 +325,14 @@ pub async fn run_backend(
         }
     }
 
+    let http_client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .build()
+        .expect("Failed to build reqwest client");
+
     let mut local_rgba = vec![255u8; 640 * 480 * 4];
     let mut pending_capture: Option<uuid::Uuid> = None;
 
-    // Video recording state management
     let mut video_tx: Option<tokio::sync::mpsc::Sender<Vec<u8>>> = None;
     let mut child_process: Option<tokio::process::Child> = None;
     let mut current_video_uuid: Option<uuid::Uuid> = None;
@@ -358,7 +353,6 @@ pub async fn run_backend(
                 },
                 DaemonCmd::DeletePhoto(uuid) => {
                     let db_clone = db.clone();
-                    // Attempt cascade deletion for both formats
                     let file_path_jpg = photos_dir.join(format!("{}.jpg", uuid));
                     let file_path_mp4 = photos_dir.join(format!("{}.mp4", uuid));
                     
@@ -379,6 +373,62 @@ pub async fn run_backend(
                         }
                     });
                 },
+                DaemonCmd::Mint(uuid, target) => {
+                    let db_clone = db.clone();
+                    let key_clone = keystore.clone();
+                    let client_clone = http_client.clone();
+                    let tx_clone = event_tx.clone();
+                    let ui_ctx = ctx.clone();
+                    
+                    tokio::spawn(async move {
+                        match compute_image_hashes(db_clone, uuid).await {
+                            Ok(hashes) => {
+                                let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
+                                let chain_str = match target {
+                                    ChainTarget::EVM => "evm".to_string(),
+                                    ChainTarget::Solana => "solana".to_string(),
+                                };
+                                
+                                let payload = MetadataPayload {
+                                    uuid: uuid.to_string(),
+                                    sha256: hashes.sha256,
+                                    phash: hashes.phash,
+                                    pubkey: key_clone.public_key_hex(),
+                                    timestamp: ts,
+                                    chain: chain_str, 
+                                };
+
+                                if let Ok(json_str) = serde_json::to_string(&payload) {
+                                    let sig = key_clone.sign_payload_hex(json_str.as_bytes());
+                                    let envelope = SignedEnvelope {
+                                        payload_json: json_str,
+                                        signature: sig,
+                                    };
+                                    
+                                    let url = "https://httpbin.org/post";
+                                    let res = client_clone.post(url).json(&envelope).send().await;
+                                    
+                                    match res {
+                                        Ok(response) if response.status().is_success() => {
+                                            println!("[Web3] Mint success for {}", uuid);
+                                            let _ = tx_clone.send(AppEvent::MintSuccess(uuid, target));
+                                        },
+                                        Ok(bad_resp) => {
+                                            let _ = tx_clone.send(AppEvent::MintFailed(uuid, target, bad_resp.status().to_string()));
+                                        },
+                                        Err(e) => {
+                                            let _ = tx_clone.send(AppEvent::MintFailed(uuid, target, e.to_string()));
+                                        }
+                                    }
+                                }
+                            },
+                            Err(e) => {
+                                let _ = tx_clone.send(AppEvent::MintFailed(uuid, target, e.to_string()));
+                            }
+                        }
+                        ui_ctx.request_repaint(); 
+                    });
+                },
                 DaemonCmd::StartVideo(uuid) => {
                     let file_path = photos_dir.join(format!("{}.mp4", uuid));
                     let child_res = tokio::process::Command::new("ffmpeg")
@@ -388,8 +438,8 @@ pub async fn run_backend(
                             "-pix_fmt", "yuyv422",
                             "-s", "640x480",
                             "-framerate", "30",
-                            "-i", "pipe:0",       // Read raw frames from stdin
-                            "-c:v", "libx264",    // Standard H264 software encoder
+                            "-i", "pipe:0",
+                            "-c:v", "libx264",
                             "-preset", "ultrafast",
                             "-crf", "28",
                             file_path.to_str().unwrap(),
@@ -401,38 +451,30 @@ pub async fn run_backend(
 
                     if let Ok(mut child) = child_res {
                         let mut stdin = child.stdin.take().expect("Failed to open stdin");
-                        // 30-frame buffer channel to prevent V4L2 pipeline stall
                         let (tx, mut rx) = tokio::sync::mpsc::channel::<Vec<u8>>(30);
                         video_tx = Some(tx);
                         child_process = Some(child);
                         current_video_uuid = Some(uuid);
 
-                        // Dedicated async frame consumer loop
                         tokio::spawn(async move {
                             use tokio::io::AsyncWriteExt;
                             while let Some(frame) = rx.recv().await {
                                 if stdin.write_all(&frame).await.is_err() { break; }
                             }
-                            // stdin drops here on channel close, sending EOF to ffmpeg
                         });
                         println!("[Hardware] Started video recording: {}", uuid);
                     }
                 },
                 DaemonCmd::StopVideo => {
-                    video_tx = None; // Terminate channel to trigger EOF on pipeline writer
-                    
+                    video_tx = None;
                     if let Some(mut child) = child_process.take() {
                         if let Some(uuid) = current_video_uuid.take() {
                             let dir_clone = photos_dir.clone();
                             let db_clone = db.clone();
-                            
-                            // Wait for muxing to finish and generate thumbnail
                             tokio::spawn(async move {
                                 let _ = child.wait().await;
                                 println!("[Hardware] Video recording finalized: {}", uuid);
-                                
                                 let video_path = dir_clone.join(format!("{}.mp4", uuid));
-                                // Extract first frame as gallery thumbnail
                                 let thumb_output = tokio::process::Command::new("ffmpeg")
                                     .args(&[
                                         "-i", video_path.to_str().unwrap(),
@@ -452,7 +494,6 @@ pub async fn run_backend(
                                             if thumbnail.write_to(&mut cursor, image::ImageFormat::Jpeg).is_ok() {
                                                 let _ = db_clone.insert(uuid.as_bytes(), cursor.into_inner());
                                                 let _ = db_clone.flush();
-                                                println!("[Storage] Video thumbnail generated and saved: {}", uuid);
                                             }
                                         }
                                     }
@@ -468,7 +509,6 @@ pub async fn run_backend(
             if cam.grab_frame() {
                 let data_slice = unsafe { std::slice::from_raw_parts(cam.mem_ptr as *const u8, cam.mem_len) };
                 
-                // Stream raw frames to ffmpeg pipeline if recording is active
                 if let Some(tx) = &video_tx {
                     let _ = tx.try_send(data_slice.to_vec());
                 }
@@ -479,36 +519,10 @@ pub async fn run_backend(
                     let frame_clone = local_rgba.clone();
                     let db_clone = db.clone();
                     let dir_clone = photos_dir.clone();
-                    let key_clone = keystore.clone();
                     
                     tokio::spawn(async move {
                         if let Err(e) = process_and_store_image(uuid, frame_clone, db_clone.clone(), dir_clone).await {
                             eprintln!("[Storage] Pipeline failed for {}: {}", uuid, e);
-                        } else {
-                            // Construct and sign Web3 payload about issue 11
-                            match compute_image_hashes(db_clone, uuid).await {
-                                Ok(hashes) => {
-                                    let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs();
-                                    let payload = MetadataPayload {
-                                        uuid: uuid.to_string(),
-                                        sha256: hashes.sha256,
-                                        phash: hashes.phash,
-                                        pubkey: key_clone.public_key_hex(),
-                                        timestamp: ts,
-                                        chain: "evm/solana".to_string(), 
-                                    };
-
-                                    if let Ok(json_str) = serde_json::to_string(&payload) {
-                                        let sig = key_clone.sign_payload_hex(json_str.as_bytes());
-                                        let envelope = SignedEnvelope {
-                                            payload_json: json_str,
-                                            signature: sig,
-                                        };
-                                        println!("[Web3] Envelope signed | Sig: {}...", &envelope.signature[..16]);
-                                    }
-                                },
-                                Err(e) => eprintln!("[Core] Hash computation failed: {}", e),
-                            }
                         }
                     });
                 }
