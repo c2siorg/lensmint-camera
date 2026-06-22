@@ -18,6 +18,6 @@ pub enum DaemonCmd {
 
 #[derive(Debug, Clone)]
 pub enum AppEvent {
-    MintSuccess(Uuid, ChainTarget),
+    MintSuccess(Uuid, ChainTarget, String),
     MintFailed(Uuid, ChainTarget, String),
 }

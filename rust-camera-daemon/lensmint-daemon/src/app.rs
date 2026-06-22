@@ -36,7 +36,7 @@ pub struct LensMintApp {
     thumb_rx: Option<std::sync::mpsc::Receiver<(uuid::Uuid, egui::ColorImage)>>,
     
     is_recording: bool,
-    mint_states: HashMap<uuid::Uuid, MintStatus>, // Cache map tracking on-chain tasks
+    mint_states: HashMap<uuid::Uuid, MintStatus>,
 }
 
 impl LensMintApp {
@@ -317,7 +317,6 @@ impl LensMintApp {
                         self.mode = AppMode::Gallery;
                     }
                     
-                    // Render current Web3 state overlay badge if present
                     if let Some(status) = self.mint_states.get(&target_uuid) {
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                             match status {
@@ -345,7 +344,6 @@ impl LensMintApp {
                 let font_size = 16.0;
 
                 ui.horizontal(|ui| {
-                    // EVM Dispatch trigger
                     let btn_evm = egui::Button::new(egui::RichText::new("MINT EVM").size(font_size).color(egui::Color32::WHITE).strong())
                         .fill(egui::Color32::from_rgb(41, 128, 185))
                         .min_size(egui::vec2(block_w, block_h))
@@ -355,7 +353,6 @@ impl LensMintApp {
                         let _ = self.tx.try_send(DaemonCmd::Mint(target_uuid, ChainTarget::EVM));
                     }
 
-                    // Solana Dispatch trigger
                     let btn_sol = egui::Button::new(egui::RichText::new("MINT SOL").size(font_size).color(egui::Color32::WHITE).strong())
                         .fill(egui::Color32::from_rgb(142, 68, 173))
                         .min_size(egui::vec2(block_w, block_h))
@@ -391,11 +388,10 @@ impl LensMintApp {
 
 impl eframe::App for LensMintApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        // Poll AppEvents from async backend
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
-                AppEvent::MintSuccess(uuid, target) => {
-                    println!("[UI] Minted successfully on {:?}", target);
+                AppEvent::MintSuccess(uuid, target, tx_hash) => {
+                    println!("[UI] Mint success on {:?}, tx_hash: {}", target, tx_hash);
                     self.mint_states.insert(uuid, MintStatus::Success);
                 },
                 AppEvent::MintFailed(uuid, target, err_msg) => {
