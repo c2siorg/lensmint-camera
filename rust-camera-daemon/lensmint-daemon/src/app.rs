@@ -202,77 +202,87 @@ impl LensMintApp {
         egui::Area::new(egui::Id::new("bottom_osd"))
             .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -16.0))
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    ui.spacing_mut().item_spacing = egui::vec2(20.0, 0.0);
-                    ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.set_width(ctx.screen_rect().width());
+
+                ui.vertical_centered(|ui| {
+                    
+                    ui.horizontal(|ui| {
+                        let block_width = 110.0;
+                        ui.add_space((ui.available_width() - block_width) / 2.0);
+
+                        let photo_color = if self.capture_mode == CaptureMode::Photo { egui::Color32::from_rgb(241, 196, 15) } else { egui::Color32::from_white_alpha(120) };
+                        let video_color = if self.capture_mode == CaptureMode::Video { egui::Color32::from_rgb(241, 196, 15) } else { egui::Color32::from_white_alpha(120) };
+
+                        if ui.add(egui::Label::new(egui::RichText::new("PHOTO").size(13.0).color(photo_color).strong()).sense(egui::Sense::click())).clicked() {
+                            self.capture_mode = CaptureMode::Photo;
+                        }
+                        ui.add_space(20.0);
+                        if ui.add(egui::Label::new(egui::RichText::new("VIDEO").size(13.0).color(video_color).strong()).sense(egui::Sense::click())).clicked() {
+                            self.capture_mode = CaptureMode::Video;
+                        }
+                    });
+
+                    ui.add_space(16.0);
+
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(0.0, 0.0);
                         
-                        ui.horizontal(|ui| {
-                            let photo_color = if self.capture_mode == CaptureMode::Photo { egui::Color32::from_rgb(241, 196, 15) } else { egui::Color32::from_white_alpha(120) };
-                            let video_color = if self.capture_mode == CaptureMode::Video { egui::Color32::from_rgb(241, 196, 15) } else { egui::Color32::from_white_alpha(120) };
+                        let block_width = 280.0;
+                        ui.add_space((ui.available_width() - block_width) / 2.0);
 
-                            if ui.add(egui::Label::new(egui::RichText::new("PHOTO").size(13.0).color(photo_color).strong()).sense(egui::Sense::click())).clicked() {
-                                self.capture_mode = CaptureMode::Photo;
-                            }
-                            ui.add_space(20.0);
-                            if ui.add(egui::Label::new(egui::RichText::new("VIDEO").size(13.0).color(video_color).strong()).sense(egui::Sense::click())).clicked() {
-                                self.capture_mode = CaptureMode::Video;
-                            }
-                        });
-                        ui.add_space(12.0);
-
-                        ui.horizontal(|ui| {
-                            ui.allocate_ui(egui::vec2(80.0, 64.0), |ui| {
-                                ui.centered_and_justified(|ui| {
-                                    if ui.add(egui::Button::new(egui::RichText::new("GALLERY").size(12.0).strong())
-                                        .fill(egui::Color32::from_black_alpha(180))
-                                        .rounding(24.0)).clicked() {
-                                        self.mode = AppMode::Gallery;
-                                        self.load_gallery(ctx.clone());
-                                    }
-                                });
+                        // 左：Gallery
+                        ui.allocate_ui(egui::vec2(80.0, 64.0), |ui| {
+                            ui.centered_and_justified(|ui| {
+                                if ui.add(egui::Button::new(egui::RichText::new("GALLERY").size(12.0).strong())
+                                    .fill(egui::Color32::from_black_alpha(180))
+                                    .rounding(24.0)).clicked() {
+                                    self.mode = AppMode::Gallery;
+                                    self.load_gallery(ctx.clone());
+                                }
                             });
+                        });
 
-                            ui.add_space(20.0);
+                        ui.add_space(24.0);
 
-                            let shutter_size = egui::vec2(72.0, 72.0);
-                            let (rect, response) = ui.allocate_exact_size(shutter_size, egui::Sense::click());
-                            let center = rect.center();
-                            ui.painter().circle_stroke(center, 34.0, egui::Stroke::new(3.0, egui::Color32::WHITE));
-                            
-                            let inner_radius = if response.is_pointer_button_down_on() { 26.0 } else { 30.0 };
-                            let inner_color = if self.capture_mode == CaptureMode::Video {
-                                egui::Color32::from_rgb(231, 76, 60)
-                            } else {
-                                egui::Color32::WHITE
-                            };
-                            ui.painter().circle_filled(center, inner_radius, inner_color);
+                        let shutter_size = egui::vec2(72.0, 72.0);
+                        let (rect, response) = ui.allocate_exact_size(shutter_size, egui::Sense::click());
+                        let center = rect.center();
+                        ui.painter().circle_stroke(center, 34.0, egui::Stroke::new(3.0, egui::Color32::WHITE));
+                        
+                        let inner_radius = if response.is_pointer_button_down_on() { 26.0 } else { 30.0 };
+                        let inner_color = if self.capture_mode == CaptureMode::Video {
+                            egui::Color32::from_rgb(231, 76, 60)
+                        } else {
+                            egui::Color32::WHITE
+                        };
+                        ui.painter().circle_filled(center, inner_radius, inner_color);
 
-                            if response.clicked() {
-                                match self.capture_mode {
-                                    CaptureMode::Photo => {
-                                        let _ = self.tx.try_send(DaemonCmd::CapturePhoto(uuid::Uuid::new_v4()));
-                                    },
-                                    CaptureMode::Video => {
-                                        if self.is_recording {
-                                            let _ = self.tx.try_send(DaemonCmd::StopVideo);
-                                        } else {
-                                            let _ = self.tx.try_send(DaemonCmd::StartVideo(uuid::Uuid::new_v4()));
-                                        }
-                                        self.is_recording = !self.is_recording;
+                        if response.clicked() {
+                            match self.capture_mode {
+                                CaptureMode::Photo => {
+                                    let _ = self.tx.try_send(DaemonCmd::CapturePhoto(uuid::Uuid::new_v4()));
+                                },
+                                CaptureMode::Video => {
+                                    if self.is_recording {
+                                        let _ = self.tx.try_send(DaemonCmd::StopVideo);
+                                    } else {
+                                        let _ = self.tx.try_send(DaemonCmd::StartVideo(uuid::Uuid::new_v4()));
                                     }
+                                    self.is_recording = !self.is_recording;
                                 }
                             }
+                        }
 
-                            ui.add_space(20.0);
+                        ui.add_space(24.0);
 
-                            ui.allocate_ui(egui::vec2(80.0, 64.0), |ui| {
-                                ui.centered_and_justified(|ui| {
-                                    if ui.add(egui::Button::new(egui::RichText::new("SETTINGS").size(12.0).strong())
-                                        .fill(egui::Color32::from_black_alpha(180))
-                                        .rounding(24.0)).clicked() {
-                                        self.mode = AppMode::Settings;
-                                    }
-                                });
+                        // 右：Settings
+                        ui.allocate_ui(egui::vec2(80.0, 64.0), |ui| {
+                            ui.centered_and_justified(|ui| {
+                                if ui.add(egui::Button::new(egui::RichText::new("SETTINGS").size(12.0).strong())
+                                    .fill(egui::Color32::from_black_alpha(180))
+                                    .rounding(24.0)).clicked() {
+                                    self.mode = AppMode::Settings;
+                                }
                             });
                         });
                     });
