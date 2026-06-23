@@ -6,8 +6,11 @@ use eframe::egui;
 use crate::cmd::{DaemonCmd, AppEvent, ChainTarget};
 use std::sync::atomic::{AtomicI32, Ordering};
 use sha2::{Sha256, Digest};
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use std::time::{SystemTime, UNIX_EPOCH};
+
+use reqwest_middleware::ClientBuilder;
+use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 
 #[repr(C)]
 pub struct v4l2_pix_format {
@@ -308,6 +311,11 @@ pub struct SignedEnvelope {
     pub signature: String,
 }
 
+#[derive(Deserialize)]
+pub struct RelayerResponse {
+    pub tx_hash: String,
+}
+
 pub async fn run_backend(
     mut rx: mpsc::Receiver<DaemonCmd>, 
     shared_frame: Arc<Mutex<Vec<u8>>>,
@@ -325,10 +333,15 @@ pub async fn run_backend(
         }
     }
 
-    let http_client = reqwest::Client::builder()
+    let retry_policy = ExponentialBackoff::builder().build_with_max_retries(3);
+    let base_client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(15))
         .build()
         .expect("Failed to build reqwest client");
+
+    let http_client = ClientBuilder::new(base_client)
+        .with(RetryTransientMiddleware::new_with_policy(retry_policy))
+        .build();
 
     let mut local_rgba = vec![255u8; 640 * 480 * 4];
     let mut pending_capture: Option<uuid::Uuid> = None;
@@ -405,13 +418,28 @@ pub async fn run_backend(
                                         signature: sig,
                                     };
                                     
-                                    let url = "https://httpbin.org/post";
-                                    let res = client_clone.post(url).json(&envelope).send().await;
+                                    let relayer_url = std::env::var("RELAYER_URL")
+                                        .unwrap_or_else(|_| "http://relayer.lensmint.local/api/v1/mint".to_string());
+
+                                    let envelope_body = serde_json::to_string(&envelope).unwrap_or_default();
+                                    
+                                    let res = client_clone.post(&relayer_url)
+                                        .header("Content-Type", "application/json")
+                                        .body(envelope_body)
+                                        .send()
+                                        .await;
                                     
                                     match res {
                                         Ok(response) if response.status().is_success() => {
-                                            println!("[Web3] Mint success for {}", uuid);
-                                            let _ = tx_clone.send(AppEvent::MintSuccess(uuid, target));
+                                            match response.json::<RelayerResponse>().await {
+                                                Ok(data) => {
+                                                    println!("[Web3] Mint success for {}, tx_hash: {}", uuid, data.tx_hash);
+                                                    let _ = tx_clone.send(AppEvent::MintSuccess(uuid, target, data.tx_hash));
+                                                },
+                                                Err(e) => {
+                                                    let _ = tx_clone.send(AppEvent::MintFailed(uuid, target, format!("Response parse error: {}", e)));
+                                                }
+                                            }
                                         },
                                         Ok(bad_resp) => {
                                             let _ = tx_clone.send(AppEvent::MintFailed(uuid, target, bad_resp.status().to_string()));

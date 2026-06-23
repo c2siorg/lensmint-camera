@@ -205,7 +205,6 @@ impl LensMintApp {
                 ui.set_width(ctx.screen_rect().width());
 
                 ui.vertical_centered(|ui| {
-                    
                     ui.horizontal(|ui| {
                         let block_width = 110.0;
                         ui.add_space((ui.available_width() - block_width) / 2.0);
@@ -230,7 +229,6 @@ impl LensMintApp {
                         let block_width = 280.0;
                         ui.add_space((ui.available_width() - block_width) / 2.0);
 
-                        // 左：Gallery
                         ui.allocate_ui(egui::vec2(80.0, 64.0), |ui| {
                             ui.centered_and_justified(|ui| {
                                 if ui.add(egui::Button::new(egui::RichText::new("GALLERY").size(12.0).strong())
@@ -275,7 +273,6 @@ impl LensMintApp {
 
                         ui.add_space(24.0);
 
-                        // 右：Settings
                         ui.allocate_ui(egui::vec2(80.0, 64.0), |ui| {
                             ui.centered_and_justified(|ui| {
                                 if ui.add(egui::Button::new(egui::RichText::new("SETTINGS").size(12.0).strong())
@@ -508,10 +505,12 @@ impl eframe::App for LensMintApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
-                AppEvent::MintSuccess(uuid, _target) => {
+                AppEvent::MintSuccess(uuid, target, tx_hash) => {
+                    println!("[UI] Minted successfully on {:?}, tx_hash: {}", target, tx_hash);
                     self.mint_states.insert(uuid, MintStatus::Success);
                 },
-                AppEvent::MintFailed(uuid, _target, _err_msg) => {
+                AppEvent::MintFailed(uuid, target, err_msg) => {
+                    eprintln!("[UI] Mint failed on {:?}: {}", target, err_msg);
                     self.mint_states.insert(uuid, MintStatus::Failed);
                 }
             }
