@@ -181,16 +181,6 @@ impl LensMintApp {
             }
         });
 
-        egui::Area::new(egui::Id::new("top_right_osd"))
-            .anchor(egui::Align2::RIGHT_TOP, egui::vec2(-16.0, 16.0))
-            .show(ctx, |ui| {
-                if ui.add(egui::Button::new(egui::RichText::new("QUIT").size(12.0).strong().color(egui::Color32::WHITE))
-                    .fill(egui::Color32::from_black_alpha(150))
-                    .rounding(16.0)).clicked() {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                }
-            });
-
         egui::Area::new(egui::Id::new("rec_indicator"))
             .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 32.0))
             .show(ctx, |ui| {
@@ -215,21 +205,26 @@ impl LensMintApp {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = egui::vec2(20.0, 0.0);
                     ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                        
                         ui.horizontal(|ui| {
-                            if ui.selectable_label(self.capture_mode == CaptureMode::Photo, egui::RichText::new("PHOTO").size(12.0).strong()).clicked() {
+                            let photo_color = if self.capture_mode == CaptureMode::Photo { egui::Color32::from_rgb(241, 196, 15) } else { egui::Color32::from_white_alpha(120) };
+                            let video_color = if self.capture_mode == CaptureMode::Video { egui::Color32::from_rgb(241, 196, 15) } else { egui::Color32::from_white_alpha(120) };
+
+                            if ui.add(egui::Label::new(egui::RichText::new("PHOTO").size(13.0).color(photo_color).strong()).sense(egui::Sense::click())).clicked() {
                                 self.capture_mode = CaptureMode::Photo;
                             }
-                            if ui.selectable_label(self.capture_mode == CaptureMode::Video, egui::RichText::new("VIDEO").size(12.0).strong()).clicked() {
+                            ui.add_space(20.0);
+                            if ui.add(egui::Label::new(egui::RichText::new("VIDEO").size(13.0).color(video_color).strong()).sense(egui::Sense::click())).clicked() {
                                 self.capture_mode = CaptureMode::Video;
                             }
                         });
-                        ui.add_space(8.0);
+                        ui.add_space(12.0);
 
                         ui.horizontal(|ui| {
                             ui.allocate_ui(egui::vec2(80.0, 64.0), |ui| {
                                 ui.centered_and_justified(|ui| {
                                     if ui.add(egui::Button::new(egui::RichText::new("GALLERY").size(12.0).strong())
-                                        .fill(egui::Color32::from_black_alpha(150))
+                                        .fill(egui::Color32::from_black_alpha(180))
                                         .rounding(24.0)).clicked() {
                                         self.mode = AppMode::Gallery;
                                         self.load_gallery(ctx.clone());
@@ -273,7 +268,7 @@ impl LensMintApp {
                             ui.allocate_ui(egui::vec2(80.0, 64.0), |ui| {
                                 ui.centered_and_justified(|ui| {
                                     if ui.add(egui::Button::new(egui::RichText::new("SETTINGS").size(12.0).strong())
-                                        .fill(egui::Color32::from_black_alpha(150))
+                                        .fill(egui::Color32::from_black_alpha(180))
                                         .rounding(24.0)).clicked() {
                                         self.mode = AppMode::Settings;
                                     }
@@ -366,6 +361,14 @@ impl LensMintApp {
                         let p2 = center + egui::vec2(-8.0, 12.0);
                         let p3 = center + egui::vec2(12.0, 0.0);
                         ui.painter().add(egui::Shape::convex_polygon(vec![p1, p2, p3], egui::Color32::WHITE, egui::Stroke::NONE));
+                        
+                        ui.painter().text(
+                            rect.center() + egui::vec2(0.0, 50.0),
+                            egui::Align2::CENTER_CENTER,
+                            "Video saved to SD Card",
+                            egui::FontId::proportional(12.0),
+                            egui::Color32::from_white_alpha(150),
+                        );
                     }
                 });
             } else {
@@ -433,42 +436,58 @@ impl LensMintApp {
         egui::TopBottomPanel::top("settings_top")
             .frame(egui::Frame::none().fill(egui::Color32::from_rgb(25, 25, 28)).inner_margin(egui::Margin::symmetric(16.0, 12.0)))
             .show(ctx, |ui| {
-                if ui.add(egui::Button::new(egui::RichText::new("◀ CAMERA").color(egui::Color32::WHITE).size(14.0)).fill(egui::Color32::TRANSPARENT)).clicked() {
-                    self.mode = AppMode::Camera;
-                }
+                ui.horizontal(|ui| {
+                    if ui.add(egui::Button::new(egui::RichText::new("◀ CAMERA").color(egui::Color32::WHITE).size(14.0)).fill(egui::Color32::TRANSPARENT)).clicked() {
+                        self.mode = AppMode::Camera;
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.add(egui::Button::new(egui::RichText::new("POWER OFF").size(12.0).strong().color(egui::Color32::from_rgb(231, 76, 60)))
+                            .fill(egui::Color32::from_black_alpha(150))
+                            .rounding(16.0)).clicked() {
+                            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                        }
+                    });
+                });
             });
 
         egui::CentralPanel::default().frame(frame).show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 ui.add_space(20.0);
                 egui::Frame::none().inner_margin(egui::Margin::symmetric(24.0, 0.0)).show(ui, |ui| {
-                    ui.label(egui::RichText::new("Hardware Controls").color(egui::Color32::WHITE).size(20.0).strong());
+                    
+                    ui.label(egui::RichText::new("Hardware Controls").color(egui::Color32::WHITE).size(18.0).strong());
                     ui.add_space(10.0);
-                    ui.label(egui::RichText::new("MANUAL LENS FOCUS").color(egui::Color32::from_gray(150)).size(12.0));
-                    ui.add_space(4.0);
-                    ui.horizontal(|ui| {
-                        let focus_slider = ui.add(egui::Slider::new(&mut self.local_focus, 0..=1023).trailing_fill(true));
-                        if focus_slider.changed() { let _ = self.tx.try_send(DaemonCmd::SetFocus(self.local_focus)); }
-                        if !focus_slider.dragged() { self.local_focus = self.shared_focus.load(Ordering::Relaxed); }
+                    egui::Frame::none().fill(egui::Color32::from_rgb(30, 30, 32)).rounding(8.0).inner_margin(12.0).show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(egui::RichText::new("Manual Focus").color(egui::Color32::from_gray(180)).size(13.0));
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                ui.set_width(120.0);
+                                let focus_slider = ui.add(egui::Slider::new(&mut self.local_focus, 0..=1023).show_value(false).trailing_fill(true));
+                                if focus_slider.changed() { let _ = self.tx.try_send(DaemonCmd::SetFocus(self.local_focus)); }
+                                if !focus_slider.dragged() { self.local_focus = self.shared_focus.load(Ordering::Relaxed); }
+                            });
+                        });
                     });
 
                     ui.add_space(30.0);
                     
-                    ui.label(egui::RichText::new("Blockchain Settings").color(egui::Color32::WHITE).size(20.0).strong());
+                    ui.label(egui::RichText::new("Blockchain Settings").color(egui::Color32::WHITE).size(18.0).strong());
                     ui.add_space(10.0);
-                    ui.label(egui::RichText::new("DEFAULT MINTING CHAIN").color(egui::Color32::from_gray(150)).size(12.0));
-                    ui.add_space(4.0);
-                    egui::ComboBox::from_id_salt("chain_combo")
-                        .selected_text(if self.default_chain == SelectedChain::EVM { "Ethereum (EVM)" } else { "Solana" })
-                        .show_ui(ui, |ui| {
-                            ui.selectable_value(&mut self.default_chain, SelectedChain::EVM, "Ethereum (EVM)");
-                            ui.selectable_value(&mut self.default_chain, SelectedChain::Solana, "Solana");
-                        });
+                    egui::Frame::none().fill(egui::Color32::from_rgb(30, 30, 32)).rounding(8.0).inner_margin(12.0).show(ui, |ui| {
+                        ui.label(egui::RichText::new("DEFAULT MINTING CHAIN").color(egui::Color32::from_gray(150)).size(11.0));
+                        ui.add_space(4.0);
+                        egui::ComboBox::from_id_salt("chain_combo")
+                            .selected_text(if self.default_chain == SelectedChain::EVM { "Ethereum (EVM)" } else { "Solana" })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(&mut self.default_chain, SelectedChain::EVM, "Ethereum (EVM)");
+                                ui.selectable_value(&mut self.default_chain, SelectedChain::Solana, "Solana");
+                            });
 
-                    ui.add_space(20.0);
-                    ui.label(egui::RichText::new("MASTER WALLET").color(egui::Color32::from_gray(150)).size(12.0));
-                    ui.add_space(4.0);
-                    ui.add(egui::TextEdit::singleline(&mut self.master_wallet).margin(egui::vec2(10.0, 10.0)));
+                        ui.add_space(16.0);
+                        ui.label(egui::RichText::new("MASTER WALLET").color(egui::Color32::from_gray(150)).size(11.0));
+                        ui.add_space(4.0);
+                        ui.add(egui::TextEdit::singleline(&mut self.master_wallet).margin(egui::vec2(10.0, 10.0)));
+                    });
                 });
             });
         });
