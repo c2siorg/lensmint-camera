@@ -47,7 +47,7 @@ let servicesInitialized = false;
 async function initializeServices() {
   try {
     console.log('🔄 Initializing claim server services...');
-    
+
     dbService.initialize();
     console.log('✅ Database initialized');
 
@@ -61,11 +61,33 @@ async function initializeServices() {
 
 initializeServices();
 
-app.post('/create-claim', (req, res) => {
+// Middleware to protect internal API routes
+const requireAuth = (req, res, next) => {
+  const apiSecret = process.env.API_SECRET;
+
+  if (!apiSecret) {
+    console.error('⚠️ API_SECRET environment variable is missing.');
+    return res.status(500).json({ success: false, error: 'Server misconfiguration: missing API_SECRET' });
+  }
+
+  const authHeader = req.headers['authorization'] || req.headers['Authorization'];
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, error: 'Authentication required' });
+  }
+
+  const token = authHeader.split(' ')[1];
+  if (token !== apiSecret) {
+    return res.status(401).json({ success: false, error: 'Invalid authentication token' });
+  }
+
+  next();
+};
+
+app.post('/create-claim', requireAuth, (req, res) => {
   try {
-    const { 
-      claim_id, 
-      cid, 
+    const {
+      claim_id,
+      cid,
       metadata_cid,
       device_id,
       camera_id,
@@ -82,9 +104,9 @@ app.post('/create-claim', (req, res) => {
     }
 
     const claim = dbService.createClaim(
-      claim_id, 
-      null, 
-      cid, 
+      claim_id,
+      null,
+      cid,
       metadata_cid || null,
       device_id || null,
       camera_id || null,
@@ -204,13 +226,13 @@ app.get('/api/metadata/:claim_id', (req, res) => {
   }
 });
 
-app.post('/update-proof-status', (req, res) => {
+app.post('/update-proof-status', requireAuth, (req, res) => {
   try {
-    const { 
-      claim_id, 
-      token_id, 
-      verification_status, 
-      proof_tx_hash 
+    const {
+      claim_id,
+      token_id,
+      verification_status,
+      proof_tx_hash
     } = req.body;
 
     if (!claim_id) {
@@ -243,9 +265,9 @@ app.post('/update-proof-status', (req, res) => {
 app.get('/verify/:claim_id', async (req, res) => {
   try {
     const { claim_id } = req.params;
-    
+
     const claim = dbService.getClaim(claim_id);
-    
+
     if (!claim) {
       return res.status(404).send(`
         <!DOCTYPE html>
@@ -294,7 +316,7 @@ app.get('/verify/:claim_id', async (req, res) => {
     };
 
     let proofData = dbService.getProof(claim_id);
-    
+
     if (proofData) {
       console.log(`[VERIFY] Found proof in local DB: status=${proofData.verification_status}, tx=${proofData.proof_tx_hash || 'none'}`);
     } else {
@@ -759,10 +781,10 @@ app.get('/claim/:claim_id', (req, res) => {
         ` : ''}
         
         <div id="status" class="status ${claim.status}">
-          ${claim.status === 'open' ? `Status: Open - Ready for editions! Original Token ID: ${claim.token_id || 'N/A'}` : 
-            claim.status === 'claimed' ? `Status: Claimed - Address: ${claim.recipient_address}` :
-            claim.status === 'completed' ? 'Status: Completed - NFT Minted! 🎉' :
-            'Status: Pending - Waiting for original NFT to be minted...'}
+          ${claim.status === 'open' ? `Status: Open - Ready for editions! Original Token ID: ${claim.token_id || 'N/A'}` :
+      claim.status === 'claimed' ? `Status: Claimed - Address: ${claim.recipient_address}` :
+        claim.status === 'completed' ? 'Status: Completed - NFT Minted! 🎉' :
+          'Status: Pending - Waiting for original NFT to be minted...'}
         </div>
 
         <form id="claimForm" ${claim.status === 'open' ? '' : 'style="display:none;"'}>
@@ -970,7 +992,7 @@ app.post('/claim/:claim_id/submit', (req, res) => {
   }
 });
 
-app.post('/update-claim-status', (req, res) => {
+app.post('/update-claim-status', requireAuth, (req, res) => {
   try {
     const { claim_id, status, token_id, tx_hash } = req.body;
 
@@ -1007,7 +1029,7 @@ app.post('/update-claim-status', (req, res) => {
   }
 });
 
-app.post('/create-edition-request', (req, res) => {
+app.post('/create-edition-request', requireAuth, (req, res) => {
   try {
     const { claim_id, wallet_address } = req.body;
 
@@ -1058,7 +1080,7 @@ app.post('/create-edition-request', (req, res) => {
   }
 });
 
-app.get('/get-pending-edition-requests', (req, res) => {
+app.get('/get-pending-edition-requests', requireAuth, (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 50;
     const requests = dbService.getPendingEditionRequests(limit);
@@ -1077,7 +1099,7 @@ app.get('/get-pending-edition-requests', (req, res) => {
   }
 });
 
-app.post('/update-edition-request', (req, res) => {
+app.post('/update-edition-request', requireAuth, (req, res) => {
   try {
     const { request_id, status, tx_hash, token_id, error_message } = req.body;
 
@@ -1116,7 +1138,7 @@ app.post('/update-edition-request', (req, res) => {
   }
 });
 
-app.post('/complete-claim', (req, res) => {
+app.post('/complete-claim', requireAuth, (req, res) => {
   try {
     const { claim_id, tx_hash, token_id } = req.body;
 
@@ -1161,7 +1183,7 @@ app.get('/health', (req, res) => {
 
 app.listen(PORT, async () => {
   await initializeServices();
-  
+
   console.log('═══════════════════════════════════════');
   console.log('🎫 LensMint Claim Server');
   console.log('═══════════════════════════════════════');

@@ -4,12 +4,19 @@ class ClaimClient {
   constructor() {
     this.baseURL = process.env.CLAIM_SERVER_URL || 'https://lensmint.onrender.com';
     const timeout = parseInt(process.env.CLAIM_CLIENT_TIMEOUT || '30000', 10);
+
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+
+    if (process.env.API_SECRET) {
+      headers['Authorization'] = `Bearer ${process.env.API_SECRET}`;
+    }
+
     this.client = axios.create({
       baseURL: this.baseURL,
       timeout: timeout,
-      headers: {
-        'Content-Type': 'application/json'
-      }
+      headers: headers
     });
   }
 
@@ -168,7 +175,7 @@ class ClaimClient {
         verification_status,
         proof_tx_hash: proof_tx_hash ? `${proof_tx_hash.substring(0, 10)}...` : null
       });
-      
+
       const response = await this.client.post('/update-proof-status', {
         claim_id,
         token_id,
