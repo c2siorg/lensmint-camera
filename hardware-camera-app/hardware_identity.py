@@ -187,6 +187,37 @@ class HardwareIdentity:
         print("⚠️ Using SHA256 for address (install pysha3 for keccak256)")
         return f"0x{address_hash}"
     
+    def _get_ethereum_message_hash(self, message):
+        prefix = f"\x19Ethereum Signed Message:\n{len(message)}".encode('utf-8')
+        prefixed_message = prefix + message
+        
+        if KECCAK_AVAILABLE:
+            try:
+                import sha3
+                k = sha3.keccak_256()
+                k.update(prefixed_message)
+                return k.digest()
+            except ImportError:
+                from Crypto.Hash import keccak
+                k = keccak.new(digest_bits=256)
+                k.update(prefixed_message)
+                return k.digest()
+        else:
+            return hashlib.sha256(prefixed_message).digest()
+
+    def _get_v_value(self, r, s, message_hash):
+        # Determine the recovery ID (v)
+        # ecdsa doesn't give us v easily, so we try both to see which recovers our public key
+        sig = r + s
+        for v in [0, 1]:
+            try:
+                vk = VerifyingKey.from_public_key_recovery(sig, message_hash, SECP256k1, hashfunc=hashlib.sha256)[v]
+                if vk.to_string() == self.public_key.to_string():
+                    return v + 27
+            except Exception:
+                pass
+        return 27 # fallback, though might fail validation
+
     def sign_data(self, data):
         if not self.initialized:
             raise RuntimeError("Hardware identity not initialized")
@@ -194,8 +225,15 @@ class HardwareIdentity:
         if isinstance(data, str):
             data = data.encode('utf-8')
         
-        signature = self.private_key.sign(data)
-        return signature
+        message_hash = self._get_ethereum_message_hash(data)
+        signature = self.private_key.sign_digest_deterministic(message_hash, hashfunc=hashlib.sha256)
+        
+        r, s = signature[:32], signature[32:]
+        v = self._get_v_value(r, s, message_hash)
+        
+        # 65 bytes: r + s + v
+        full_signature = signature + bytes([v])
+        return full_signature
     
     def sign_hash(self, data_hash):
         if not self.initialized:
@@ -205,12 +243,18 @@ class HardwareIdentity:
             # Assume hex string
             data_hash = bytes.fromhex(data_hash.replace('0x', ''))
         
-        signature = self.private_key.sign(data_hash)
+        message_hash = self._get_ethereum_message_hash(data_hash)
+        signature = self.private_key.sign_digest_deterministic(message_hash, hashfunc=hashlib.sha256)
+        
+        r, s = signature[:32], signature[32:]
+        v = self._get_v_value(r, s, message_hash)
+        
+        full_signature = signature + bytes([v])
         
         return {
-            'signature': signature.hex(),
+            'signature': "0x" + full_signature.hex(),
             'address': self.address,
-            'algorithm': 'ECDSA_SECP256k1',
+            'algorithm': 'ECDSA_SECP256k1_ETH',
             'salt_path': SALT_PATH if os.path.exists(SALT_PATH) else str(SALT_BACKUP_PATH)
         }
     
@@ -224,8 +268,13 @@ class HardwareIdentity:
         if isinstance(signature, str):
             signature = bytes.fromhex(signature.replace('0x', ''))
         
+        # Strip 'v' if it has 65 bytes, ecdsa only needs 64
+        if len(signature) == 65:
+            signature = signature[:64]
+            
         try:
-            self.public_key.verify(signature, data)
+            message_hash = self._get_ethereum_message_hash(data)
+            self.public_key.verify_digest(signature, message_hash)
             return True
         except Exception:
             return False

@@ -706,6 +706,34 @@ app.post('/api/images/upload', upload.single('image'), async (req, res) => {
       });
     }
 
+    try {
+      let sigHex = signature.startsWith('0x') ? signature : '0x' + signature;
+      let hashHex = imageHash.startsWith('0x') ? imageHash : '0x' + imageHash;
+      let isValid = false;
+      
+      try {
+        if (ethers.verifyMessage(ethers.getBytes(hashHex), sigHex).toLowerCase() === deviceAddress.toLowerCase()) {
+          isValid = true;
+        }
+      } catch (e) {
+        console.error('Signature recovery failed:', e.message);
+      }
+
+      if (!isValid) {
+        fs.unlinkSync(req.file.path);
+        return res.status(401).json({
+          success: false,
+          error: 'Invalid signature: Image authenticity could not be verified'
+        });
+      }
+    } catch (error) {
+      fs.unlinkSync(req.file.path);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid signature format'
+      });
+    }
+
     const filename = `photo_${Date.now()}.jpg`;
     const filepath = path.join(CAPTURES_PATH, filename);
     fs.renameSync(req.file.path, filepath);

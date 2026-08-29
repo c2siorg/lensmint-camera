@@ -4,6 +4,8 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC1155/ERC1155.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Strings.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./DeviceRegistry.sol";
 
 contract LensMintERC1155 is ERC1155, Ownable {
@@ -21,7 +23,7 @@ contract LensMintERC1155 is ERC1155, Ownable {
         string deviceId;
         string ipfsHash;
         string imageHash;
-        string signature;
+        bytes signature;
         uint256 timestamp;
         uint256 maxEditions;
         bool isOriginal;
@@ -52,16 +54,52 @@ contract LensMintERC1155 is ERC1155, Ownable {
         baseURI = _baseURI;
     }
 
+    function _hexStringToBytes(string memory s) internal pure returns (bytes memory) {
+        bytes memory ss = bytes(s);
+        uint offset = 0;
+        if (ss.length >= 2 && ss[0] == '0' && (ss[1] == 'x' || ss[1] == 'X')) {
+            offset = 2;
+        }
+        bytes memory r = new bytes((ss.length - offset) / 2);
+        for (uint i = 0; i < r.length; i++) {
+            uint16 charCode1 = uint8(ss[offset + i*2]);
+            uint16 charCode2 = uint8(ss[offset + i*2 + 1]);
+            
+            uint8 b1 = uint8(charCode1 >= 97 ? charCode1 - 87 : charCode1 >= 65 ? charCode1 - 55 : charCode1 - 48);
+            uint8 b2 = uint8(charCode2 >= 97 ? charCode2 - 87 : charCode2 >= 65 ? charCode2 - 55 : charCode2 - 48);
+            
+            r[i] = bytes1((b1 << 4) | b2);
+        }
+        return r;
+    }
+
+    function _verifySignature(string memory _imageHash, bytes memory _signature, address expectedSigner) internal pure returns (bool) {
+        bytes memory hashBytes = _hexStringToBytes(_imageHash);
+        require(hashBytes.length == 32, "Invalid hash length");
+        bytes32 messageHash;
+        assembly {
+            messageHash := mload(add(hashBytes, 32))
+        }
+
+        bytes32 ethSignedHash = MessageHashUtils.toEthSignedMessageHash(messageHash);
+        address recoveredSigner = ECDSA.recover(ethSignedHash, _signature);
+        return recoveredSigner == expectedSigner;
+    }
+
     function mintOriginal(
         address _to,
         string memory _ipfsHash,
         string memory _imageHash,
-        string memory _signature,
+        bytes memory _signature,
         uint256 _maxEditions
     ) external returns (uint256) {
         require(
             deviceRegistry.isDeviceActive(msg.sender),
             "Device not registered or inactive"
+        );
+        require(
+            _verifySignature(_imageHash, _signature, msg.sender),
+            "Invalid signature"
         );
 
         DeviceRegistry.DeviceInfo memory device = deviceRegistry.getDevice(msg.sender);

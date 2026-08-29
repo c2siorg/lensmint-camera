@@ -537,9 +537,9 @@ class Web3Service {
 
   getLensMintABI() {
     return [
-      "function mintOriginal(address _to, string memory _ipfsHash, string memory _imageHash, string memory _signature, uint256 _maxEditions) external returns (uint256)",
+      "function mintOriginal(address _to, string memory _ipfsHash, string memory _imageHash, bytes _signature, uint256 _maxEditions) external returns (uint256)",
       "function mintEdition(address _to, uint256 _originalTokenId) external returns (uint256)",
-      "function getTokenMetadata(uint256 _tokenId) external view returns (tuple(address deviceAddress, string deviceId, string ipfsHash, string imageHash, string signature, uint256 timestamp, uint256 maxEditions, bool isOriginal, uint256 originalTokenId))",
+      "function getTokenMetadata(uint256 _tokenId) external view returns (tuple(address deviceAddress, string deviceId, string ipfsHash, string imageHash, bytes signature, uint256 timestamp, uint256 maxEditions, bool isOriginal, uint256 originalTokenId))",
       "function getEditionCount(uint256 _originalTokenId) external view returns (uint256)",
       "event TokenMinted(uint256 indexed tokenId, address indexed deviceAddress, string deviceId, string ipfsHash, bool isOriginal)",
       "event EditionMinted(uint256 indexed tokenId, uint256 indexed originalTokenId, address indexed to)"

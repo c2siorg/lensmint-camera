@@ -41,7 +41,7 @@ contract MintEditionDebugTest is Test {
             owner,
             "QmTest123",
             "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-            "0xsignature123",
+            bytes("0xsignature123"),
             0
         );
         
@@ -76,7 +76,7 @@ contract MintEditionDebugTest is Test {
             owner,
             "QmTest123",
             "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890",
-            "0xsignature123",
+            bytes("0xsignature123"),
             0
         );
         
