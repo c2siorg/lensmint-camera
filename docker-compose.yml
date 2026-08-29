@@ -1,0 +1,68 @@
+version: '3.8'
+
+services:
+
+  owner-portal:
+    build:
+      context: ./owner-portal
+      dockerfile: Dockerfile
+    container_name: lensmint-owner-portal
+    ports:
+      - "3000:80"
+    environment:
+      - VITE_PRIVY_APP_ID=${VITE_PRIVY_APP_ID}
+      - VITE_BACKEND_URL=${VITE_BACKEND_URL:-http://localhost:5000}
+    depends_on:
+      - hardware-web3-service
+    networks:
+      - lensmint-network
+
+  public-server:
+    build:
+      context: ./lensmint-public-server
+      dockerfile: Dockerfile
+    container_name: lensmint-public-server
+    ports:
+      - "4000:4000"
+    environment:
+      - PORT=4000
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      - CLAIM_SERVER_URL=${CLAIM_SERVER_URL:-http://localhost:4000}
+      - DATABASE_PATH=./database/claims.db
+    volumes:
+      - public-server-db:/app/database
+    networks:
+      - lensmint-network
+
+  hardware-web3-service:
+    build:
+      context: ./hardware-web3-service
+      dockerfile: Dockerfile
+    container_name: lensmint-web3-service
+    ports:
+      - "5000:5000"
+    environment:
+      - PORT=5000
+      - PRIVY_APP_ID=${PRIVY_APP_ID}
+      - PRIVY_APP_SECRET=${PRIVY_APP_SECRET}
+      - PRIVATE_KEY=${PRIVATE_KEY}
+      - RPC_URL=${RPC_URL}
+      - DEVICE_REGISTRY_ADDRESS=${DEVICE_REGISTRY_ADDRESS}
+      - LENSMINT_ERC1155_ADDRESS=${LENSMINT_ERC1155_ADDRESS}
+      - LENSMINT_VERIFIER_ADDRESS=${LENSMINT_VERIFIER_ADDRESS}
+      - FILECOIN_API_KEY=${FILECOIN_API_KEY}
+      - WEB_PROVER_API_CLIENT_ID=${WEB_PROVER_API_CLIENT_ID}
+      - WEB_PROVER_API_SECRET=${WEB_PROVER_API_SECRET}
+      - DATABASE_PATH=./database/lensmint.db
+    volumes:
+      - web3-service-db:/app/database
+    networks:
+      - lensmint-network
+
+networks:
+  lensmint-network:
+    driver: bridge
+
+volumes:
+  public-server-db:
+  web3-service-db:
