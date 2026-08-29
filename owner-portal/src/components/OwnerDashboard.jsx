@@ -1,117 +1,97 @@
 import { usePrivy, useWallets } from '@privy-io/react-auth'
 import { useAccount } from 'wagmi'
 import { useState, useEffect } from 'react'
-import axios from 'axios'
+import { TABS } from '../constants/tabs'
+import { useSessionSigner } from '../hooks/useSessionSigner'
+import Sidebar from './layout/Sidebar'
+import Toast from './ui/Toast'
+import Overview from './tabs/Overview'
+import MintNFT from './tabs/MintNFT'
+import History from './tabs/History'
+import Settings from './tabs/Settings'
 import './OwnerDashboard.css'
 
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:5000'
 const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID || 'your-privy-app-id'
 
+// OwnerDashboard is the top-level shell.
+// It handles auth state and passes data down to tab components.
 function OwnerDashboard() {
   const { ready, authenticated, login, logout, user } = usePrivy()
   const { wallets } = useWallets()
   const { address, isConnected } = useAccount()
-  const [sessionSigner, setSessionSigner] = useState(null)
-  const [signerAddress, setSignerAddress] = useState(null)
-  const [status, setStatus] = useState('')
-  const [mintStatus, setMintStatus] = useState('')
-  const [ipfsHash, setIpfsHash] = useState('')
-  const [imageHash, setImageHash] = useState('')
-  const [signature, setSignature] = useState('')
-  const [maxEditions, setMaxEditions] = useState(10)
 
+  const [activeTab, setActiveTab] = useState(TABS.OVERVIEW)
+  const [txHistory, setTxHistory] = useState([])
+  const [toast, setToast] = useState({ message: '', type: '' })
+
+  // Session signer logic extracted into a custom hook
+  const {
+    sessionSigner,
+    signerAddress,
+    isSettingUp,
+    error: signerError,
+    setupSessionSigner,
+  } = useSessionSigner(wallets, address, user)
+
+  // Show toast when session signer setup fails
+  useEffect(() => {
+    if (signerError) {
+      setToast({ message: signerError, type: 'error' })
+    }
+  }, [signerError])
+
+  // Auto-clear toast after 5 seconds
+  useEffect(() => {
+    if (!toast.message) return
+    const timer = setTimeout(() => setToast({ message: '', type: '' }), 5000)
+    return () => clearTimeout(timer)
+  }, [toast])
+
+  // Auto-initialize session signer once wallet is available
   useEffect(() => {
     if (authenticated && wallets.length > 0 && !sessionSigner) {
+      setupSessionSigner()
     }
-  }, [authenticated, wallets, sessionSigner])
+  }, [authenticated, wallets])
 
-  const setupSessionSigner = async () => {
-    try {
-      setStatus('Setting up session signer...')
-      
-      const wallet = wallets.find(w => w.walletClientType === 'privy') || wallets[0]
-      if (!wallet) {
-        setStatus('No wallet found. Please connect a wallet.')
-        return
-      }
-
-      const walletAddress = wallet.address || address
-      if (!walletAddress) {
-        setStatus('❌ No wallet address available')
-        return
-      }
-
-      const response = await axios.post(`${BACKEND_URL}/api/privy/create-session-signer`, {
-        walletAddress: walletAddress,
-        userId: user?.id || 'unknown'
-      })
-
-      if (response.data.success) {
-        setSessionSigner(response.data.sessionSigner)
-        setSignerAddress(response.data.signerAddress)
-        setStatus('✅ Session signer created successfully')
-      }
-    } catch (error) {
-      console.error('Error setting up session signer:', error)
-      setStatus(`❌ Error: ${error.response?.data?.error || error.message}`)
-    }
+  // Called by MintNFT tab after a successful mint
+  const handleMintSuccess = (newTx) => {
+    setTxHistory(prev => [newTx, ...prev])
+    setToast({ message: 'NFT minted successfully.', type: 'success' })
   }
 
-  const handleMint = async (ipfsHash, imageHash, signature, maxEditions) => {
-    try {
-      if (!sessionSigner?.id) {
-        setMintStatus('❌ Please setup session signer first')
-        return
-      }
-
-      if (!address) {
-        setMintStatus('❌ No wallet address available')
-        return
-      }
-
-      setMintStatus('Minting NFT...')
-      
-      const response = await axios.post(`${BACKEND_URL}/api/privy/mint-with-signer`, {
-        recipient: address,
-        ipfsHash,
-        imageHash,
-        signature,
-        maxEditions,
-        sessionSignerId: sessionSigner.id
-      })
-
-      if (response.data.success) {
-        setMintStatus(`✅ Minted successfully! TX: ${response.data.txHash}`)
-      }
-    } catch (error) {
-      console.error('Error minting:', error)
-      setMintStatus(`❌ Error: ${error.response?.data?.error || error.message}`)
-    }
-  }
-
+  // Show spinner while Privy initializes
   if (!ready) {
     return (
-      <div className="container">
-        <div className="card">
-          <h1>Loading...</h1>
-        </div>
+      <div className="loading-screen">
+        <div className="loading-spinner" />
+        <p>Initializing...</p>
       </div>
     )
   }
 
+  // Show login page if not authenticated
   if (!authenticated) {
     return (
-      <div className="container">
-        <div className="card">
-          <h1>🔐 LensMint Owner Portal</h1>
-          <p>Login to manage your LensMint camera system</p>
+      <div className="login-screen">
+        <div className="login-card">
+          <div className="login-logo">
+            <div className="logo-icon" />
+            <h1>LensMint</h1>
+            <span>Owner Portal</span>
+          </div>
+          <p>Sign in to manage your LensMint camera system.</p>
           {PRIVY_APP_ID === 'your-privy-app-id' && (
-            <div className="warning-message">
-              ⚠️ Please configure VITE_PRIVY_APP_ID in .env file
+            <div className="alert alert-warning">
+              VITE_PRIVY_APP_ID is not configured. Please update your .env file.
             </div>
           )}
-          <button onClick={login} className="login-button" disabled={PRIVY_APP_ID === 'your-privy-app-id'}>
-            Login with Privy
+          <button
+            onClick={login}
+            className="btn btn-primary btn-full"
+            disabled={PRIVY_APP_ID === 'your-privy-app-id'}
+          >
+            Sign In
           </button>
         </div>
       </div>
@@ -119,119 +99,67 @@ function OwnerDashboard() {
   }
 
   return (
-    <div className="container">
-      <div className="card">
-        <div className="header">
-          <h1>🎨 LensMint Owner Portal</h1>
-          <button onClick={logout} className="logout-button">
-            Logout
-          </button>
-        </div>
+    <div className="dashboard">
 
-        <div className="section">
-          <h2>Account Info</h2>
-            <div className="info-grid">
-              <div>
-                <strong>User ID:</strong> {user?.id || 'N/A'}
-              </div>
-              <div>
-                <strong>Wallet Address:</strong> {address || wallets[0]?.address || 'No wallet'}
-              </div>
-              <div>
-                <strong>Connected:</strong> {isConnected ? '✅' : '❌'}
-              </div>
-              <div>
-                <strong>Wallets:</strong> {wallets.length}
-              </div>
-            </div>
-        </div>
+      {/* Sidebar with navigation */}
+      <Sidebar
+        activeTab={activeTab}
+        setActiveTab={setActiveTab}
+        user={user}
+        isConnected={isConnected}
+        onSignOut={logout}
+      />
 
-        {sessionSigner && (
-          <div className="section">
-            <h2>Session Signer</h2>
-            <div className="info-grid">
-              <div>
-                <strong>Signer ID:</strong> {sessionSigner.id}
-              </div>
-              <div>
-                <strong>Signer Address:</strong> {signerAddress}
-              </div>
-              <div>
-                <strong>Status:</strong> {status}
-              </div>
-            </div>
-          </div>
+      {/* Main content area */}
+      <main className="main-content">
+
+        {/* Global toast notification */}
+        <Toast message={toast.message} type={toast.type} />
+
+        {/* Tab rendering — only the active tab mounts */}
+        {activeTab === TABS.OVERVIEW && (
+          <Overview
+            user={user}
+            address={address}
+            wallets={wallets}
+            isConnected={isConnected}
+            sessionSigner={sessionSigner}
+            signerAddress={signerAddress}
+            isSettingUp={isSettingUp}
+            txCount={txHistory.length}
+            onSetupSigner={setupSessionSigner}
+            onNavigate={setActiveTab}
+          />
         )}
 
-        <div className="section">
-          <h2>Actions</h2>
-          <div className="actions">
-            {!sessionSigner && (
-              <button onClick={setupSessionSigner} className="action-button">
-                Setup Session Signer
-              </button>
-            )}
-            {sessionSigner && (
-              <div className="mint-form">
-                <input 
-                  type="text" 
-                  placeholder="IPFS Hash" 
-                  value={ipfsHash}
-                  onChange={(e) => setIpfsHash(e.target.value)}
-                  className="input-field" 
-                />
-                <input 
-                  type="text" 
-                  placeholder="Image Hash" 
-                  value={imageHash}
-                  onChange={(e) => setImageHash(e.target.value)}
-                  className="input-field" 
-                />
-                <input 
-                  type="text" 
-                  placeholder="Signature" 
-                  value={signature}
-                  onChange={(e) => setSignature(e.target.value)}
-                  className="input-field" 
-                />
-                <input 
-                  type="number" 
-                  placeholder="Max Editions" 
-                  value={maxEditions}
-                  onChange={(e) => setMaxEditions(parseInt(e.target.value) || 10)}
-                  className="input-field" 
-                />
-                <button 
-                  onClick={() => {
-                    if (ipfsHash && imageHash && signature) {
-                      handleMint(ipfsHash, imageHash, signature, maxEditions)
-                    } else {
-                      setMintStatus('❌ Please fill all fields')
-                    }
-                  }} 
-                  className="action-button primary"
-                >
-                  Mint NFT
-                </button>
-              </div>
-            )}
-          </div>
-          {mintStatus && (
-            <div className="status-message">{mintStatus}</div>
-          )}
-        </div>
+        {activeTab === TABS.MINT && (
+          <MintNFT
+            address={address}
+            sessionSigner={sessionSigner}
+            isSettingUp={isSettingUp}
+            onSetupSigner={setupSessionSigner}
+            onMintSuccess={handleMintSuccess}
+          />
+        )}
 
-        <div className="section">
-          <h2>Gas Sponsorship</h2>
-          <p className="info-text">
-            ✅ Gas fees are automatically sponsored through Privy. 
-            Transactions will be executed without requiring ETH balance.
-          </p>
-        </div>
-      </div>
+        {activeTab === TABS.HISTORY && (
+          <History
+            txHistory={txHistory}
+            onNavigate={setActiveTab}
+          />
+        )}
+
+        {activeTab === TABS.SETTINGS && (
+          <Settings
+            sessionSigner={sessionSigner}
+            signerAddress={signerAddress}
+            onSignOut={logout}
+          />
+        )}
+
+      </main>
     </div>
   )
 }
 
 export default OwnerDashboard
-
