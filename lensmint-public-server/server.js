@@ -6,6 +6,15 @@ require('dotenv').config();
 
 const dbService = require('./dbService');
 
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
 const app = express();
 const PORT = process.env.PORT || 5001;
 
@@ -260,7 +269,7 @@ app.get('/verify/:claim_id', async (req, res) => {
         </head>
         <body>
           <h1 class="error">Claim Not Found</h1>
-          <p>The claim ID "${claim_id}" does not exist.</p>
+          <p>The claim ID "${escapeHtml(claim_id)}" does not exist.</p>
         </body>
         </html>
       `);
@@ -346,7 +355,7 @@ app.get('/verify/:claim_id', async (req, res) => {
       <body>
         <div class="container">
           <h1>🔐 ZK Proof Verification</h1>
-          <p class="subtitle">Claim ID: ${claim_id}</p>
+          <p class="subtitle">Claim ID: ${escapeHtml(claim_id)}</p>
           
           <div class="grid">
             <div class="card">
@@ -428,8 +437,8 @@ app.get('/verify/:claim_id', async (req, res) => {
           </div>
           
           <div style="margin-top: 30px; text-align: center;">
-            <a href="/claim/${claim_id}" class="btn">View Claim Page</a>
-            <a href="/api/metadata/${claim_id}" class="btn" style="margin-left: 10px;">View Metadata API</a>
+            <a href="/claim/${escapeHtml(claim_id)}" class="btn">View Claim Page</a>
+            <a href="/api/metadata/${escapeHtml(claim_id)}" class="btn" style="margin-left: 10px;">View Metadata API</a>
           </div>
         </div>
       </body>
@@ -443,7 +452,7 @@ app.get('/verify/:claim_id', async (req, res) => {
       <head><title>Error</title></head>
       <body>
         <h1>Error</h1>
-        <p>${error.message}</p>
+        <p>${escapeHtml(error.message)}</p>
       </body>
       </html>
     `);
@@ -507,7 +516,7 @@ app.get('/claim/:claim_id', (req, res) => {
       </head>
       <body>
         <h1 class="error">Claim Not Found</h1>
-        <p>The claim ID "${claim_id}" does not exist.</p>
+        <p>The claim ID "${escapeHtml(claim_id)}" does not exist.</p>
       </body>
       </html>
     `);
@@ -781,17 +790,17 @@ app.get('/claim/:claim_id', (req, res) => {
         </form>
 
         <div id="message"></div>
-        <div class="claim-id">Claim ID: ${claim_id}</div>
+        <div class="claim-id">Claim ID: ${escapeHtml(claim_id)}</div>
         
         <div style="margin-top: 20px; text-align: center; padding-top: 20px; border-top: 1px solid #e0e0e0;">
-          <a href="/verify/${claim_id}" class="proof-link">
+          <a href="/verify/${escapeHtml(claim_id)}" class="proof-link">
             🔐 Check ZK Proof Verification
           </a>
         </div>
       </div>
 
       <script>
-        const claimId = '${claim_id}';
+        const claimId = '${escapeHtml(claim_id)}';
         const form = document.getElementById('claimForm');
         const submitBtn = document.getElementById('submitBtn');
         const messageDiv = document.getElementById('message');
