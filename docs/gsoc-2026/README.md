@@ -7,6 +7,8 @@ LensMint runs as one Rust daemon on a Raspberry Pi. It captures photos, signs a 
 
 This guide explains the shipped system, shows how to run the daemon, follows the prove and mint flow, and points to the related code, DevLogs, and chain evidence.
 
+If you want to run the camera, start at the [contributor starting guide](#contributor-starting-guide). [What the authenticity result means](#what-the-authenticity-result-means) and [scope not shipped in this season](#scope-not-shipped-in-this-season) are further down this page.
+
 ### Reference links
 
 - [GSoC final report](https://gist.github.com/Tenerife-Q/00929ef6fb7c386a75bf5ee10a4a32f3)

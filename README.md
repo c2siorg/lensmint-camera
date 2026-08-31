@@ -4,16 +4,39 @@
 
 ![LensMint Logo](https://img.shields.io/badge/LensMint-Web3%20Camera-blue?style=for-the-badge)
 ![License](https://img.shields.io/badge/license-MIT-green?style=for-the-badge)
-![Blockchain](https://img.shields.io/badge/Blockchain-Ethereum%20%7C%20Filecoin-purple?style=for-the-badge)
-![ZK Proofs](https://img.shields.io/badge/ZK%20Proofs-vlayer%20%7C%20RISC%20Zero-orange?style=for-the-badge)
+![GSoC](https://img.shields.io/badge/GSoC-2026-orange?style=for-the-badge)
 
-**A Web3 camera system that solves real problems for creators: prove photos are authentic (not AI-generated), create proof of attendance at events, preserve memories with verified blockchain records, and easily mint NFTs for others (attendees, people in photos).**
+**LensMint is a Raspberry Pi camera.** The board takes the photo, signs a HashRecord with a key that stays on the device, and can mint on Sepolia or Solana devnet. A later RISC Zero proof checks that signature and whether a second perceptual hash is still close. The JPEG doesn't enter the circuit.
 
-[Gallery](#-gallery) • [Features](#-features) • [How It Works](#-how-it-works) • [Architecture](#-technical-architecture) • [Installation](#-installation) • [Hardware](#-hardware-requirements)
+**[GSoC 2026 documentation](docs/gsoc-2026/README.md)**
 
 </div>
 
 ---
+
+## GSoC 2026
+
+### How it started
+
+LensMint started as a Web3 camera on a Raspberry Pi, where the idea was to take a photo, bind it to a key on the board, and mint it as an NFT. The README below is the first writeup for this repo. That page planned a Python app, vlayer for ZK, Filecoin for storage, and RISC Zero as a verifier. The same writeup said a photo could be proven authentic rather than AI-generated, and listed tagging, attendance proofs, and creator payouts. That's the brief this season started from.
+
+### What we shipped
+
+The camera still lives on the Pi. One Rust program now handles the live path. The daemon pulls frames through V4L2, draws an `egui` UI, writes the JPEG to disk, and signs a HashRecord when the shutter fires. The signed message is `uuid|sha256|phash`. The same program can mint on Sepolia or Solana devnet.
+
+From that record, RISC Zero proves two facts: the device key signed the message at capture, and a later perceptual hash stays within Hamming distance 5 of the first. Proving takes minutes and is too heavy for the Pi, so that step runs on a PC. When the receipt comes back, a local mint gate checks the files before the daemon will mint. Checking the seal in public is a later Sepolia transaction. Solana uses the same gate on the device, though there is no on-chain verifier this season. Those two checks stop at the signature and the Hamming bound, so nothing in the result says the photo is real or that the camera detected AI.
+
+The full writeup is the [GSoC 2026 documentation](docs/gsoc-2026/README.md).
+
+### What changed
+
+The live app is Rust now, not Python. vlayer and Filecoin were left out of this season. Authenticity isn't a file digest anymore, and the old "not AI-generated" claim is gone. The check is now a signed perceptual hash and a Hamming bound. Minting, which used to go through a TypeScript relayer, now happens inside the daemon. The mint transaction and the on-chain seal check are two different transactions.
+
+---
+
+## Original repository README
+
+The rest of this file is the LensMint README from before the 2026 work. This part is here as history. Don't follow the Python install steps below. The current camera starts from the [contributor starting guide](docs/gsoc-2026/README.md#contributor-starting-guide).
 
 ## 📸 Gallery
 
